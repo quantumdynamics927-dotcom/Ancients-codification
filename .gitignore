@@ -15,15 +15,17 @@ venv/
 .idea/
 *.swp
 
-# Project-specific
+# ORACC corpus cache (large downloads)
+ancient_ml/data/oracc/
+datasets/oracc/
+datasets/blind/*.jsonl
+
+# Analysis outputs
 outputs/
 *.png
 *.jpg
 *.json
 !outputs/.gitkeep
-
-# ORACC corpus cache (large downloads)
-ancient_ml/data/oracc/
 
 # OS
 .DS_Store

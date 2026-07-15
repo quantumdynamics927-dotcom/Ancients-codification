@@ -86,9 +86,9 @@
 
 | Pair | Known | Correct | Accuracy | Notes |
 |------|-------|---------|----------|-------|
-| Ugaritic → Hebrew | 8 | 8 | **100%** | Close Semitic family; noiseless |
-| Sumerian → Akkadian | 15 | 0 | **0%** | Different families; needs bilingual seeds |
-| Egyptian → Semitic | 9 | 1 | **11%** | Distant relation; high divergence |
+| Ugaritic -> Hebrew | 8 | 8 | **100%** | Close Semitic family; noiseless |
+| Sumerian -> Akkadian | 15 | 0 | **0%** | Different families; needs bilingual seeds |
+| Egyptian -> Semitic | 9 | 1 | **11%** | Distant relation; high divergence |
 
 ### Interpretation
 
@@ -99,6 +99,77 @@
 ### Scientific Wording
 
 > "CSA_OptMatcher achieves 100% accuracy on 8 Ugaritic-Hebrew cognate pairs under noiseless conditions, consistent with published benchmarks. On Sumerian-Akkadian, accuracy drops to 0% because cognate matching requires shared lexical items across language families — shared script is insufficient without bilingual seed alignment."
+
+---
+
+## Blind Sophistication Stack (2026-07-15)
+
+### Validation Results
+
+#### Hieroglyphs (embedded sample, n=335 signs, 40 sequences, vocab=11)
+
+| Test | Result |
+|------|--------|
+| Held-out field stability (train/test gap) | 0.000 — **PASS** |
+| Held-out grammar acceptance (train/test gap) | 0.000 — **PASS** |
+| Null beats shuffle (MI_delta) | +0.913 — **PASS** |
+| Null beats markov (MI_delta) | +0.116 — **PASS** |
+| Baseline self-classification (6 controls) | 1/6 correct (Python only) |
+| Bootstrap 95% CI on H1 | 3.267–3.420 |
+| Bootstrap 95% CI on MI | 1.183–1.464 |
+| Preregistered geometry (Bonferroni) | p=0.132 — does not pass |
+
+**Verdict: LEVEL_2_FORMAL_GRAMMAR_CANDIDATE** (confidence: low)
+- Held-out fields and grammar replicate perfectly on the embedded sample
+- Null models are beaten on MI — real sequences have structure beyond token shuffle
+- Confidence low: baseline self-classification fails (manifold not discriminative for tiny synthetic corpora)
+
+#### Cuneiform (embedded sample, n=360 signs, 40 sequences, vocab=3)
+
+| Test | Result |
+|------|--------|
+| Held-out field stability (train/test gap) | 0.000 — **PASS** |
+| Null beats shuffle (MI_delta) | +0.031 — **FAIL** (margin) |
+| Null beats markov (MI_delta) | +0.003 — **FAIL** |
+| Preregistered geometry (Bonferroni) | p=0.444 — **FAIL** |
+
+**Verdict: LEVEL_0_NO_EVIDENCE** (confidence: low)
+- Tiny vocabulary (3 signs) makes the corpus essentially a repeating pattern — trivial to memorize as Markov chain
+- Null models not robustly beaten
+- This correctly reflects the sample:vocab ratio is too small for meaningful inference
+
+---
+
+## Validation Interpretation
+
+### What the Results Show
+
+The embedded hieroglyph sample (LEVEL_2, low confidence):
+- **Real structure:** Field boundaries and grammar replicate on held-out tablets — genuine pattern, not overfitting
+- **Beyond shuffle:** MI is higher in real than shuffled, meaning sign sequences are more predictable than random
+- **Not yet generalizable:** The sample is small (335 signs, 11-vocab), hand-curated, and all sequences share a template. Baseline self-classification fails because the manifold can't distinguish 6 tiny synthetic corpora
+- **Verdict wording:** "LEVEL_2_FORMAL_GRAMMAR_CANDIDATE means the pipeline finds regular structure in this specific sample — not that ancient Egyptian was a machine language"
+
+The embedded cuneiform sample (LEVEL_0):
+- **Too small to reach conclusions:** 3-sign vocabulary with 40 repeating sequences behaves like a formulaic list, not a formal language
+- **Correct rejection:** The pipeline correctly does not claim structure for insufficient data
+
+### What Is NOT Shown
+
+| Claim | Status |
+|-------|--------|
+| Egyptian hieroglyphs are a machine language | **NOT SHOWN** — only LEVEL_2 on a small embedded sample |
+| Anunnaki authored a formal communication protocol | **NOT SHOWN** — no author identity is inferable from sign structure |
+| Geometry proves sacred encoding | **NOT SHOWN** — Bonferroni p=0.132, does not pass multiple-testing correction |
+| This extends to real ORACC tablets | **NOT SHOWN** — requires validation on primary material |
+
+### What Requires Next Steps
+
+- [ ] Run on ORACC primary corpus (etcsri, rinap) with real sign IDs — the embedded samples are proof-of-concept only
+- [ ] Obtain raw sign stream images for real phi measurements (not embedded approximations)
+- [ ] Test on independent Sumerian and Egyptian corpora separately
+- [ ] Improve baseline self-classification: the manifold needs larger control corpora for discriminative power
+- [ ] Preregister geometry targets before running on primary image data
 
 ---
 
@@ -128,9 +199,12 @@
 ---
 
 ## References
-
 - Tamburini, F. (2025). CSA_OptMatcher. *Frontiers in Artificial Intelligence*. DOI: 10.3389/frai.2025.1581129
 - Sproat, R. (2013). Fluency in Egyptian. *Journal of Egyptian History*. JSTOR: 24672182
 - Xavier-de-Souza et al. (2010). Coupled Simulated Annealing. *IEEE Transactions on Systems*.
 - ORACC. https://oracc.museum.upenn.edu/
 - Veldhuis, N. ORACC-JSON. https://github.com/niekveldhuis/ORACC-JSON
+- NDSS Symposium. "Auto Draft 342." https://www.ndss-symposium.org/ndss-paper/auto-draft-342/
+- Berkeley EECS. "Automatic Protocol Reverse Engineering." https://people.eecs.berkeley.edu/~dawnsong/papers/2012%20Automatic%20Protocol%20Reverse%20Engineering.pdf
+- PubMed. "Assessing chance in phi ratio studies." https://pubmed.ncbi.nlm.nih.gov/41587867/
+- PMC. "Statistical validation of protocol inference." https://pmc.ncbi.nlm.nih.gov/articles/PMC6337927/
