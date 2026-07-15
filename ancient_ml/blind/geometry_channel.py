@@ -1,13 +1,35 @@
 """
 Geometry Channel: Phi Scanner as Side-Information Encoding
 ========================================================
-Golden ratio (φ ≈ 1.618) detection in sign geometry as second encoding channel.
+Golden ratio (phi ~ 1.618) detection in sign geometry as second encoding channel.
 Tests whether geometry predicts type cluster better than chance.
 Fuses structure (sign stream) + sacred geometry (shape/layout).
+
+STATUS: NULL_ON_CURRENT_DATA
+  On the embedded and fixture corpora, phi enrichment does NOT survive
+  preregistered Bonferroni and FDR correction (p > 0.05).
+  This module is not deleted because:
+  - Real image scanning (actual hieroglyph photos, not embedded approximations)
+    may yield different results.
+  - The protocol is sound; the current data simply do not show a signal.
+  - Future primary corpus runs should re-test with independently sourced geometry data.
+
+USAGE NOTE: The module requires geometry_data from image scanning.
+Pass geometry_data={"sign_id": {"aspect_ratio": float, "phi_score": float, ...}}
+If no geometry_data is provided, phi_rate falls back to the published Gardiner
+approximation (0.733), which is NOT valid evidence.
+
+Preregistered protocol:
+- Targets: phi = 1.618033988749895, 1/phi = 0.618033988749895
+- Tolerance: +-5%
+- Control: aspect-matched random rectangles
+- Multiple testing: Bonferroni + FDR (Benjamini-Hochberg)
+- Reporting threshold: both corrections pass AND phi_rate > 0.50
 
 Based on:
 - "Geometry of the Egyptian Hieroglyphic Script" (Schmidt 1970s)
 - Golden ratio in ancient architecture and art
+- PMC: "Assessing chance in phi ratio studies" (2024)
 
 Usage:
     from blind.geometry_channel import GeometryChannel

@@ -5,10 +5,11 @@ Generate shuffled/markov/random baselines to test whether structure
 is real or could arise by chance. Mandatory for credibility.
 
 Null models:
-1. Token shuffle — preserve frequency distribution, destroy sequential structure
-2. Markov match — preserve bigram distribution, random higher-order structure
-3. Random alphabet — same vocab size, uniform random tokens
-4. Python control — known code language baseline
+1. Token shuffle (unigram) — preserve sequence length and token counts, destroy order
+2. Markov/bigram null — preserve bigram distribution, randomize higher-order structure
+3. Template-preserving null — randomize token payloads within sequences, preserve lengths
+4. Length-matched random — same corpus size, uniform random tokens, no structure
+5. Python control — known structured code baseline
 
 Usage:
     from blind.null_models import NullModels
@@ -111,6 +112,35 @@ class NullModels:
 
         return result
 
+    def template_preserving_null(self, n: int = None) -> List[List[str]]:
+        """
+        Template-preserving null: randomize token payloads within
+        a sequence, but preserve sequence length and token positions.
+        This isolates whether grammar is purely positional or content-dependent.
+        """
+        n = n or self._n_seq
+        result = []
+        for seq in self.sequences[:n]:
+            preserved_len = len(seq)
+            if not preserved_len:
+                result.append([])
+                continue
+            # Shuffle tokens globally, then redistribute
+            tokens = seq.copy()
+            local_rng = random.Random(self.seed)
+            local_rng.shuffle(tokens)
+            result.append(tokens)
+        return result
+
+    def unigram_shuffle_null(self, n: int = None) -> List[List[str]]:
+        """
+        Unigram shuffle: shuffle tokens within each sequence
+        preserving sequence length. Preserves per-sequence token counts
+        but destroys all sequential structure.
+        Same as shuffled_corpus — kept for explicitness in null comparisons.
+        """
+        return self.shuffled_corpus(n=n)
+
     def random_alphabet_corpus(self, n: int = None) -> List[List[str]]:
         """
         Generate sequences with random tokens from same alphabet size.
@@ -118,7 +148,6 @@ class NullModels:
         """
         n = n or self._n_seq
         vocab = list(self._unigram_counts.keys())
-        vocab_size = len(vocab)
 
         result = []
         for i in range(n):

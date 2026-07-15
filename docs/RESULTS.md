@@ -110,33 +110,36 @@
 
 | Test | Result |
 |------|--------|
-| Held-out field stability (train/test gap) | 0.000 — **PASS** |
-| Held-out grammar acceptance (train/test gap) | 0.000 — **PASS** |
+| Held-out field stability (train) | 1.000 |
+| Held-out field stability (test) | 1.000 |
+| Generalization delta (fields) | 0.000 |
+| Grammar accept real minus shuffle (test) | **pending re-run with new fields** |
 | Null beats shuffle (MI_delta) | +0.913 — **PASS** |
 | Null beats markov (MI_delta) | +0.116 — **PASS** |
 | Baseline self-classification (6 controls) | 1/6 correct (Python only) |
-| Bootstrap 95% CI on H1 | 3.267–3.420 |
-| Bootstrap 95% CI on MI | 1.183–1.464 |
-| Preregistered geometry (Bonferroni) | p=0.132 — does not pass |
+| Bootstrap 95% CI on H1 | 3.267-3.420 |
+| Bootstrap 95% CI on MI | 1.183-1.464 |
+| Preregistered geometry (Bonferroni) | p=0.132 - does not pass |
 
 **Verdict: LEVEL_2_FORMAL_GRAMMAR_CANDIDATE** (confidence: low)
-- Held-out fields and grammar replicate perfectly on the embedded sample
-- Null models are beaten on MI — real sequences have structure beyond token shuffle
-- Confidence low: baseline self-classification fails (manifold not discriminative for tiny synthetic corpora)
+- Held-out fields replicate on the embedded sample
+- Null models beaten on MI - real sequences have structure beyond token shuffle
+- Confidence low: baseline self-classification fails (manifold not discriminative for tiny synthetic corpora), no geometry signal
+- **Revised interpretation:** The old "gap=0.000 PASS" reporting was misleading without the null-comparison threshold. The grammar_real_minus_shuffle metric is the correct test. Re-run required with updated validate.py to confirm.
 
 #### Cuneiform (embedded sample, n=360 signs, 40 sequences, vocab=3)
 
 | Test | Result |
 |------|--------|
-| Held-out field stability (train/test gap) | 0.000 — **PASS** |
-| Null beats shuffle (MI_delta) | +0.031 — **FAIL** (margin) |
-| Null beats markov (MI_delta) | +0.003 — **FAIL** |
-| Preregistered geometry (Bonferroni) | p=0.444 — **FAIL** |
+| Held-out field stability (train/test gap) | 0.000 - field inference unstable on 3-vocab |
+| Null beats shuffle (MI_delta) | +0.031 - **FAIL** (margin) |
+| Null beats markov (MI_delta) | +0.003 - **FAIL** |
+| Preregistered geometry (Bonferroni) | p=0.444 - **FAIL** |
 
 **Verdict: LEVEL_0_NO_EVIDENCE** (confidence: low)
-- Tiny vocabulary (3 signs) makes the corpus essentially a repeating pattern — trivial to memorize as Markov chain
+- Tiny vocabulary (3 signs) makes the corpus a repeating pattern - trivial Markov chain
 - Null models not robustly beaten
-- This correctly reflects the sample:vocab ratio is too small for meaningful inference
+- Pipeline correctly rejects this corpus
 
 ---
 
@@ -195,6 +198,46 @@ The embedded cuneiform sample (LEVEL_0):
 - Degrades with noise; requires curated cognate seed lists
 - Works on phonetically similar cognates (Ugaritic-Hebrew)
 - Fails on divergent families without bilingual alignment
+
+---
+
+## Decision Rule
+
+**Do not add another sophistication layer.** Freeze architecture, fix baseline calibration, acquire primary corpus data, then run the validation matrix unchanged.
+
+The next meaningful milestone is:
+
+```
+CALIBRATION PASS:
+  >= 80% baseline self-classification
+  + primary dataset n >= 10,000 opaque sign tokens
+  + cross-tablet held-out replication
+  + result beats Markov null
+```
+
+Only after that should the pipeline be permitted to emit `LEVEL_2` or above.
+
+---
+
+## Honest Validation Status (Current Embedded Samples)
+
+### Hieroglyph sample: LEVEL_2_FORMAL_GRAMMAR_CANDIDATE, low confidence
+The result is limited by n=335 signs, vocabulary=11, incomplete baseline self-classification, and no surviving geometry signal.
+
+### Cuneiform sample: LEVEL_0_NO_EVIDENCE
+A 3-token, repeated-formula sample does not beat matched null models.
+
+### Geometry: no statistically significant phi enrichment
+No phi enrichment after preregistered +/-5% tolerance with Bonferroni and FDR correction.
+
+### Conclusion
+Current outputs do not support claims about machine-language authorship, Anunnaki origin, ancient technology, or a geometry channel.
+
+### Next Steps (in priority order)
+1. Acquire primary ORACC data (etcsri, rinap) - network blocked at present
+2. Calibrate family manifold: >= 80% self-classification on control baselines
+3. Test on corpus with n >= 10,000 opaque sign tokens
+4. Confirm Markov null is beaten before claiming formal grammar
 
 ---
 

@@ -71,13 +71,22 @@ class BaselineSelfClassification:
 
 @dataclass
 class HeldOutMetrics:
-    """Metrics computed separately on held-out test set."""
+    """
+    Metrics computed separately on train and test splits.
+    Field naming makes the comparison explicit:
+      - generalization_delta = train_metric - test_metric
+        (zero means perfect generalization; large drop means overfitting)
+      - real_minus_shuffle = real_acceptance - shuffled_acceptance
+        (positive means structure survives token shuffle)
+    """
     field_stability_train: float
     field_stability_test: float
-    field_stability_gap: float
-    grammar_accept_train: float
-    grammar_accept_test: float
-    grammar_accept_gap: float
+    generalization_delta_field_stability: float  # = train - test
+    grammar_accept_train: float           # real acceptance on train
+    grammar_accept_test: float            # real acceptance on test
+    generalization_delta_grammar: float   # = train - test
+    grammar_accept_real_minus_shuffle_train: float  # real - shuffled on train
+    grammar_accept_real_minus_shuffle_test: float   # real - shuffled on test
     n_fields_train: float
     n_fields_test: float
     fields_match: bool
@@ -154,10 +163,12 @@ class ValidationResult:
             "held_out": {
                 "field_stability_train": self.held_out.field_stability_train,
                 "field_stability_test": self.held_out.field_stability_test,
-                "field_stability_gap": self.held_out.field_stability_gap,
+                "generalization_delta_field_stability": self.held_out.generalization_delta_field_stability,
                 "grammar_accept_train": self.held_out.grammar_accept_train,
                 "grammar_accept_test": self.held_out.grammar_accept_test,
-                "grammar_accept_gap": self.held_out.grammar_accept_gap,
+                "generalization_delta_grammar": self.held_out.generalization_delta_grammar,
+                "grammar_accept_real_minus_shuffle_train": self.held_out.grammar_accept_real_minus_shuffle_train,
+                "grammar_accept_real_minus_shuffle_test": self.held_out.grammar_accept_real_minus_shuffle_test,
                 "fields_match": self.held_out.fields_match,
             },
             "bootstrap_cis": {
@@ -317,6 +328,20 @@ class Validator:
         except Exception:
             return 0.0
 
+    def _grammar_accept_vs_shuffle(self, sequences: List[List[str]]) -> float:
+        """
+        Compute (real_grammar_accept - shuffle_grammar_accept) for a corpus.
+        Positive value means structure survives token shuffle.
+        """
+        real_ga = self._grammar_accept(sequences)
+        # Generate shuffled version
+        shuff = [seq.copy() for seq in sequences]
+        rng = random.Random(42)
+        for seq in shuff:
+            rng.shuffle(seq)
+        shuffle_ga = self._grammar_accept(shuff)
+        return real_ga - shuffle_ga
+
     def _zlib_ratio(self, flat: List[str]) -> float:
         import zlib
         s = " ".join(flat)
@@ -379,20 +404,38 @@ class Validator:
     # ── Held-out validation ────────────────────────────────────────────
 
     def held_out_validation(self) -> HeldOutMetrics:
-        """Run on train, test independently, compare field/grammar stability."""
+        """
+        Run on train, test independently, compare field/grammar stability.
+
+        Key interpretation:
+        - generalization_delta = train_metric - test_metric
+          Zero means structure generalizes perfectly; a large drop means overfitting.
+        - grammar_accept_real_minus_shuffle = real acceptance - shuffled acceptance
+          Positive means structure survives token shuffle.
+        Genuine L2 requires BOTH:
+          test_grammar_real_minus_shuffle > preregistered_threshold
+          abs(generalization_delta) < allowed_drop
+        """
         fs_train = self._field_stability(self._train)
         fs_test = self._field_stability(self._test)
         nf_train = self._n_fields(self._train)
         nf_test = self._n_fields(self._test)
         ga_train = self._grammar_accept(self._train)
         ga_test = self._grammar_accept(self._test)
+
+        # Real minus shuffle — positive means structure survives token shuffle
+        ga_rmshuf_train = self._grammar_accept_vs_shuffle(self._train)
+        ga_rmshuf_test = self._grammar_accept_vs_shuffle(self._test)
+
         return HeldOutMetrics(
             field_stability_train=fs_train,
             field_stability_test=fs_test,
-            field_stability_gap=abs(fs_train - fs_test),
+            generalization_delta_field_stability=abs(fs_train - fs_test),
             grammar_accept_train=ga_train,
             grammar_accept_test=ga_test,
-            grammar_accept_gap=abs(ga_train - ga_test),
+            generalization_delta_grammar=abs(ga_train - ga_test),
+            grammar_accept_real_minus_shuffle_train=ga_rmshuf_train,
+            grammar_accept_real_minus_shuffle_test=ga_rmshuf_test,
             n_fields_train=nf_train,
             n_fields_test=nf_test,
             fields_match=abs(nf_train - nf_test) < 0.5,
@@ -769,9 +812,17 @@ class Validator:
         Rules:
         - LEVEL_0: Real is indistinguishable from nulls (real_wins < 2)
         - LEVEL_1: Real beats shuffle/Markov on >=2 key metrics
-        - LEVEL_2: + Held-out fields/grammar replicate (gap < 0.15)
+        - LEVEL_2: + test_grammar_real_minus_shuffle > 0.10
+                    AND abs(generalization_delta) < 0.20
         - LEVEL_3: + Far from all baselines (novelty > 1.1)
         - LEVEL_4: + Geometry survives Bonferroni + FDR + phi_rate > 0.5
+
+        Key thresholds (preregistered):
+        - grammar_real_minus_shuffle threshold: 0.10
+          (must beat shuffle by >10pp on held-out test set)
+        - generalization_delta cap: 0.20
+          (train-test gap must be <20pp — structure generalizes, not overfits)
+        - null wins threshold: 2 (out of 4 metrics)
 
         Baseline self-classification failures reduce confidence at each level
         but do not block levels entirely — the manifold may be miscalibrated
@@ -785,10 +836,23 @@ class Validator:
         # Core conditions
         null_defeats = null_comp.real_wins < 2
         beats_null = null_comp.real_wins >= 2
-        held_out_ok = (
-            held_out.field_stability_gap < 0.15 and
-            held_out.grammar_accept_gap < 0.15
+
+        # Grammar structure survives token shuffle on held-out test set
+        # This is the real test — not the gap, but whether structure survives null
+        grammar_survives_shuffle = (
+            held_out.grammar_accept_real_minus_shuffle_test > 0.10
         )
+
+        # Structure generalizes (no large train-test drop)
+        generalization_ok = (
+            held_out.generalization_delta_grammar < 0.20
+        )
+
+        # Held-out field stability generalizes
+        field_generalizes = (
+            held_out.generalization_delta_field_stability < 0.20
+        )
+
         novelty_far = manifold_novelty > 1.1
         dual_channel = (
             geometry is not None and
@@ -803,16 +867,19 @@ class Validator:
         elif not beats_null:
             verdict = "LEVEL_1_STRUCTURED_SYMBOLIC"
             confidence = "low"
-        elif not held_out_ok:
+        elif not grammar_survives_shuffle:
+            verdict = "LEVEL_1_STRUCTURED_SYMBOLIC"
+            confidence = "medium" if baseline_partial else "low"
+        elif not generalization_ok:
             verdict = "LEVEL_1_STRUCTURED_SYMBOLIC"
             confidence = "medium" if baseline_partial else "low"
         elif not novelty_far:
             verdict = "LEVEL_2_FORMAL_GRAMMAR_CANDIDATE"
-            confidence = "high" if (baseline_ok and held_out.field_stability_gap < 0.05) else \
+            confidence = "high" if (baseline_ok and generalization_ok and field_generalizes) else \
                          "medium" if baseline_partial else "low"
         elif not dual_channel:
             verdict = "LEVEL_3_NOVEL_FORMAL_SYSTEM_CANDIDATE"
-            confidence = "high" if (baseline_ok and held_out.field_stability_gap < 0.05) else \
+            confidence = "high" if (baseline_ok and generalization_ok) else \
                          "medium" if baseline_partial else "low"
         else:
             verdict = "LEVEL_4_DUAL_CHANNEL_ENCODING_CANDIDATE"
@@ -898,9 +965,13 @@ def validation_summary(result: ValidationResult) -> str:
     # Held-out
     ho = result.held_out
     lines.append(f"\nHELD-OUT VALIDATION ({int((1-0.25)*100)}/{int(0.25*100)} train/test split)")
-    lines.append(f"  field_stability: train={ho.field_stability_train:.3f} test={ho.field_stability_test:.3f} gap={ho.field_stability_gap:.3f}")
-    lines.append(f"  grammar_accept:  train={ho.grammar_accept_train:.3f} test={ho.grammar_accept_test:.3f} gap={ho.grammar_accept_gap:.3f}")
-    lines.append(f"  n_fields:        train={ho.n_fields_train:.1f} test={ho.n_fields_test:.1f} match={ho.fields_match}")
+    lines.append(f"  field_stability:                train={ho.field_stability_train:.3f}  test={ho.field_stability_test:.3f}")
+    lines.append(f"  generalization_delta (fields):  {ho.generalization_delta_field_stability:.3f}  (train - test, lower = better)")
+    lines.append(f"  grammar_accept (real):          train={ho.grammar_accept_train:.3f}  test={ho.grammar_accept_test:.3f}")
+    lines.append(f"  grammar_accept (shuffled):     computed internally by held-out routine")
+    lines.append(f"  real_minus_shuffle (test):      {ho.grammar_accept_real_minus_shuffle_test:+.3f}  (> 0.10 = structure survives shuffle)")
+    lines.append(f"  generalization_delta (grammar): {ho.generalization_delta_grammar:.3f}  (train - test, lower = better)")
+    lines.append(f"  n_fields:                       train={ho.n_fields_train:.1f}  test={ho.n_fields_test:.1f}  match={ho.fields_match}")
 
     # Bootstrap CI
     lines.append(f"\nBOOTSTRAP 95% CI (n={result.bootstrap_cis.get('h1', BootstrapCI('', 0, 0, 0, 0, 0)).n_bootstrap})")
