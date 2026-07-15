@@ -177,6 +177,12 @@ def main():
         help="Path to local JSONL corpus (required with --corpus local)",
     )
     parser.add_argument(
+        "--source",
+        type=str, default=None,
+        help="ORACC project name for source tracking (e.g. 'etcsri', 'rinap'). "
+             "Defaults to corpus name or path stem.",
+    )
+    parser.add_argument(
         "--sequences", type=int, default=40,
         help="Number of sequences to analyze (default: 40)",
     )
@@ -213,16 +219,21 @@ def main():
         try:
             sequences = load_local_jsonl(args.path)
             corpus_name = Path(args.path).stem
+            # --source overrides the auto-detected project name
+            source_project = args.source or corpus_name
             print(f"[Loaded] Local corpus: {len(sequences)} texts from {args.path}")
+            print(f"[Source] ORACC project: {source_project}")
         except Exception as e:
             print(f"[ERROR] Could not load {args.path}: {e}")
             return 1
     elif args.corpus == "hieroglyphs":
         sequences = load_hieroglyph_sample()
         corpus_name = "hieroglyphs"
+        source_project = args.source or corpus_name
     elif args.corpus == "cuneiform":
         sequences = load_cuneiform_sample()
         corpus_name = "cuneiform"
+        source_project = args.source or corpus_name
     else:
         # Python control
         keywords = ["def", "return", "if", "else", "for", "in", "import"]
@@ -247,12 +258,14 @@ def main():
                      "print", "(", identifiers[i % 5], ")"]
                 )
         corpus_name = "python_control"
+        source_project = args.source or corpus_name
 
     sequences = sequences[: args.sequences]
 
     print(f"\n{'='*70}")
     print(f"BLIND FORMAL LANGUAGE DISCOVERY STACK")
     print(f"Corpus: {corpus_name}")
+    print(f"Source project: {source_project}")
     print(f"Sequences: {len(sequences)}")
     print(f"Total signs: {sum(len(s) for s in sequences)}")
     print(f"{'='*70}")
@@ -270,6 +283,7 @@ def main():
         validator = Validator(
             sequences=sequences,
             corpus_name=corpus_name,
+            source_project=source_project,
             held_out_ratio=args.heldout,
             bootstrap_n=args.bootstrap,
             random_seed=42,

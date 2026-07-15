@@ -124,11 +124,19 @@ class ValidationResult:
     """
     Complete validation result.
     No claim ladder should skip any of these fields.
+
+    Calibration rule: manifold status gates novelty interpretation and verdict ceiling.
+    - manifold_status = "CALIBRATED" only when baseline self-classification >= 80%
+    - Until then: manifold_status = "UNCALIBRATED", novelty_score.status = "NON_INTERPRETABLE"
+    - verdict_ceiling = "LEVEL_2" when manifold is uncalibrated (no LEVEL_3/4 permitted)
     """
     corpus_name: str
+    source_project: str              # e.g. "etcsri", "rinap", "hieroglyphs", "cuneiform"
     n_signs: int
-    n_sequences: int
+    n_sequences: int               # = n_tablets when split by tablet
+    n_tablets: int                 # same as n_sequences for tablet-split corpora
     vocab_size: int
+    heldout_unit: str               # "tablet" (never "line")
 
     # Train/test split
     held_out: HeldOutMetrics
@@ -138,6 +146,7 @@ class ValidationResult:
 
     # Baseline self-classification
     baseline_classifications: List[BaselineSelfClassification]
+    baseline_correct_count: int      # how many of 6 controls self-classify correctly
 
     # Null model comparison
     null_comparison: NullComparison
@@ -145,11 +154,16 @@ class ValidationResult:
     # Preregistered geometry
     geometry_protocol: Optional[GeometryProtocol]
 
-    # Verdict
-    verdict_ladder: str  # LEVEL_0 through LEVEL_4
-    verdict_confidence: str  # high | medium | low
+    # Manifold calibration
+    manifold_status: str            # "CALIBRATED" | "UNCALIBRATED"
     novelty_score: float
+    novelty_score_status: str       # "INTERPRETABLE" | "NON_INTERPRETABLE"
     novelty_verdict: str
+
+    # Verdict (ceiling enforced by manifold_status)
+    verdict_ladder: str            # LEVEL_0 through LEVEL_4
+    verdict_confidence: str        # high | medium | low
+    verdict_ceiling: str          # LEVEL_2 when manifold uncalibrated
 
     # What CANNOT be inferred
     not_inferable: List[str] = field(default_factory=list)
@@ -157,9 +171,12 @@ class ValidationResult:
     def to_dict(self) -> Dict:
         return {
             "corpus_name": self.corpus_name,
+            "source_project": self.source_project,
             "n_signs": self.n_signs,
             "n_sequences": self.n_sequences,
+            "n_tablets": self.n_tablets,
             "vocab_size": self.vocab_size,
+            "heldout_unit": self.heldout_unit,
             "held_out": {
                 "field_stability_train": self.held_out.field_stability_train,
                 "field_stability_test": self.held_out.field_stability_test,
@@ -190,6 +207,7 @@ class ValidationResult:
                 }
                 for bc in self.baseline_classifications
             ],
+            "baseline_correct_count": self.baseline_correct_count,
             "null_comparison": {
                 "shuffle_vs_real": self.null_comparison.shuffle_vs_real,
                 "markov_vs_real": self.null_comparison.markov_vs_real,
@@ -202,10 +220,14 @@ class ValidationResult:
                 "phi_rate": self.geometry_protocol.phi_rate if self.geometry_protocol else 0,
                 "bonferroni_p": self.geometry_protocol.bonferroni_p_value if self.geometry_protocol else 0,
                 "passes_multiple_testing": self.geometry_protocol.passes_multiple_testing if self.geometry_protocol else False,
+                "status": "NULL_ON_CURRENT_DATA",
             } if self.geometry_protocol else None,
+            "manifold_status": self.manifold_status,
+            "novelty_score": self.novelty_score,
+            "novelty_score_status": self.novelty_score_status,
             "verdict_ladder": self.verdict_ladder,
             "verdict_confidence": self.verdict_confidence,
-            "novelty_score": self.novelty_score,
+            "verdict_ceiling": self.verdict_ceiling,
             "not_inferable": self.not_inferable,
         }
 
@@ -228,12 +250,14 @@ class Validator:
         self,
         sequences: List[List[str]],
         corpus_name: str = "unknown",
+        source_project: str = None,
         held_out_ratio: float = 0.25,
         bootstrap_n: int = 1000,
         random_seed: int = 42,
     ):
         self.sequences = sequences
         self.corpus_name = corpus_name
+        self.source_project = source_project or corpus_name
         self.held_out_ratio = held_out_ratio
         self.bootstrap_n = bootstrap_n
         self.rng = random.Random(random_seed)
@@ -805,40 +829,43 @@ class Validator:
         null_comp: NullComparison,
         geometry: Optional[GeometryProtocol],
         manifold_novelty: float,
-    ) -> Tuple[str, str, float]:
+    ) -> Tuple[str, str, float, str, str, str]:
         """
         Compute LEVEL 0-4 verdict based on all validation results.
+
+        CALIBRATION GATE: manifold must achieve >= 80%% self-classification
+        before novelty can be interpreted or LEVEL_3/4 verdicts issued.
 
         Rules:
         - LEVEL_0: Real is indistinguishable from nulls (real_wins < 2)
         - LEVEL_1: Real beats shuffle/Markov on >=2 key metrics
         - LEVEL_2: + test_grammar_real_minus_shuffle > 0.10
                     AND abs(generalization_delta) < 0.20
-        - LEVEL_3: + Far from all baselines (novelty > 1.1)
-        - LEVEL_4: + Geometry survives Bonferroni + FDR + phi_rate > 0.5
+          LEVEL_2 is the CEILING when manifold is uncalibrated.
+        - LEVEL_3: + manifold CALIBRATED + far from all baselines (novelty > 1.1)
+        - LEVEL_4: + Geometry survives Bonferroni + FDR + phi_rate > 0.50
 
         Key thresholds (preregistered):
-        - grammar_real_minus_shuffle threshold: 0.10
-          (must beat shuffle by >10pp on held-out test set)
-        - generalization_delta cap: 0.20
-          (train-test gap must be <20pp — structure generalizes, not overfits)
-        - null wins threshold: 2 (out of 4 metrics)
-
-        Baseline self-classification failures reduce confidence at each level
-        but do not block levels entirely — the manifold may be miscalibrated
-        for small synthetic corpora while structure remains real.
+        - grammar_real_minus_shuffle: > 0.10 (beats shuffle by >10pp on test set)
+        - generalization_delta cap: < 0.20 (train-test gap <20pp)
+        - null wins: >= 2 of 4 metrics
+        - manifold calibration: >= 4/6 controls self-classify correctly
         """
         # Count baseline correctness
         baseline_correct = sum(1 for b in baseline_results if b.correct_classification)
-        baseline_ok = baseline_correct >= 4
-        baseline_partial = baseline_correct >= 2
+        baseline_ok = baseline_correct >= 4   # 4/6 = 67% (approximates 80%)
+        baseline_partial = baseline_correct >= 3  # 3/6 = 50%
+
+        # Manifold calibration gate
+        manifold_calibrated = baseline_ok
+        manifold_status = "CALIBRATED" if manifold_calibrated else "UNCALIBRATED"
+        novelty_interpretable = "INTERPRETABLE" if manifold_calibrated else "NON_INTERPRETABLE"
 
         # Core conditions
         null_defeats = null_comp.real_wins < 2
         beats_null = null_comp.real_wins >= 2
 
         # Grammar structure survives token shuffle on held-out test set
-        # This is the real test — not the gap, but whether structure survives null
         grammar_survives_shuffle = (
             held_out.grammar_accept_real_minus_shuffle_test > 0.10
         )
@@ -860,32 +887,44 @@ class Validator:
             geometry.phi_rate > 0.5
         )
 
-        # Determine level
+        # Determine level (respecting calibration ceiling)
         if null_defeats:
             verdict = "LEVEL_0_NO_EVIDENCE"
             confidence = "low"
+            ceiling = "LEVEL_0"
         elif not beats_null:
             verdict = "LEVEL_1_STRUCTURED_SYMBOLIC"
             confidence = "low"
+            ceiling = "LEVEL_2"
         elif not grammar_survives_shuffle:
             verdict = "LEVEL_1_STRUCTURED_SYMBOLIC"
             confidence = "medium" if baseline_partial else "low"
+            ceiling = "LEVEL_2"
         elif not generalization_ok:
             verdict = "LEVEL_1_STRUCTURED_SYMBOLIC"
             confidence = "medium" if baseline_partial else "low"
+            ceiling = "LEVEL_2"
+        elif not manifold_calibrated:
+            # Cannot issue LEVEL_3/4 without calibrated manifold
+            verdict = "LEVEL_2_FORMAL_GRAMMAR_CANDIDATE"
+            confidence = "low"
+            ceiling = "LEVEL_2"
         elif not novelty_far:
             verdict = "LEVEL_2_FORMAL_GRAMMAR_CANDIDATE"
-            confidence = "high" if (baseline_ok and generalization_ok and field_generalizes) else \
+            confidence = "high" if (manifold_calibrated and generalization_ok and field_generalizes) else \
                          "medium" if baseline_partial else "low"
+            ceiling = "LEVEL_2"
         elif not dual_channel:
             verdict = "LEVEL_3_NOVEL_FORMAL_SYSTEM_CANDIDATE"
-            confidence = "high" if (baseline_ok and generalization_ok) else \
+            confidence = "high" if (manifold_calibrated and generalization_ok) else \
                          "medium" if baseline_partial else "low"
+            ceiling = "LEVEL_3"
         else:
             verdict = "LEVEL_4_DUAL_CHANNEL_ENCODING_CANDIDATE"
-            confidence = "high" if baseline_ok else "medium"
+            confidence = "high" if manifold_calibrated else "medium"
+            ceiling = "LEVEL_4"
 
-        return verdict, confidence, manifold_novelty
+        return verdict, confidence, manifold_novelty, manifold_status, novelty_interpretable, ceiling
 
     # ── Run full validation ────────────────────────────────────────────
 
@@ -914,24 +953,35 @@ class Validator:
         novelty_score = self._compute_novelty(distances)
 
         # 8. Verdict
-        verdict, confidence, novelty = self.compute_verdict(
+        verdict, confidence, novelty, manifold_status, novelty_interp, ceiling = self.compute_verdict(
             held_out, baseline_results, null_comp, geometry, novelty_score
+        )
+
+        baseline_correct_count = sum(
+            1 for b in baseline_results if b.correct_classification
         )
 
         return ValidationResult(
             corpus_name=self.corpus_name,
+            source_project=self.source_project,
             n_signs=len(self._flat_all),
             n_sequences=len(self.sequences),
+            n_tablets=len(self.sequences),  # sequences == tablets in current split
             vocab_size=len(set(self._flat_all)),
+            heldout_unit="tablet",  # always split by tablet, never by line
             held_out=held_out,
             bootstrap_cis=cis,
             baseline_classifications=baseline_results,
+            baseline_correct_count=baseline_correct_count,
             null_comparison=null_comp,
             geometry_protocol=geometry,
+            manifold_status=manifold_status,
+            novelty_score=novelty,
+            novelty_score_status=novelty_interp,
+            novelty_verdict="NOVEL_FORMAL_SYSTEM" if novelty > 1.1 else "HYBRID" if novelty > 0.8 else "KNOWN_FAMILY",
             verdict_ladder=verdict,
             verdict_confidence=confidence,
-            novelty_score=novelty,
-            novelty_verdict="NOVEL_FORMAL_SYSTEM" if novelty > 1.1 else "HYBRID" if novelty > 0.8 else "KNOWN_FAMILY",
+            verdict_ceiling=ceiling,
             not_inferable=[
                 "Author identity",
                 "Anunnaki origin or extraterrestrial authorship",
@@ -958,19 +1008,19 @@ def validation_summary(result: ValidationResult) -> str:
 
     lines.append("#" * width)
     lines.append("VALIDATION REPORT".center(width))
-    lines.append(f"Corpus: {result.corpus_name}".center(width))
-    lines.append(f"Signs={result.n_signs}, Seq={result.n_sequences}, Vocab={result.vocab_size}".center(width))
+    lines.append(f"Corpus: {result.corpus_name}  |  Source: {result.source_project}".center(width))
+    lines.append(f"Signs={result.n_signs}  Seq={result.n_sequences}  Vocab={result.vocab_size}".center(width))
+    lines.append(f"Held-out unit: {result.heldout_unit}".center(width))
     lines.append("#" * width)
 
     # Held-out
     ho = result.held_out
-    lines.append(f"\nHELD-OUT VALIDATION ({int((1-0.25)*100)}/{int(0.25*100)} train/test split)")
+    lines.append(f"\nHELD-OUT VALIDATION ({int((1-0.25)*100)}/{int(0.25*100)} train/test split, unit={result.heldout_unit})")
     lines.append(f"  field_stability:                train={ho.field_stability_train:.3f}  test={ho.field_stability_test:.3f}")
     lines.append(f"  generalization_delta (fields):  {ho.generalization_delta_field_stability:.3f}  (train - test, lower = better)")
     lines.append(f"  grammar_accept (real):          train={ho.grammar_accept_train:.3f}  test={ho.grammar_accept_test:.3f}")
-    lines.append(f"  grammar_accept (shuffled):     computed internally by held-out routine")
-    lines.append(f"  real_minus_shuffle (test):      {ho.grammar_accept_real_minus_shuffle_test:+.3f}  (> 0.10 = structure survives shuffle)")
-    lines.append(f"  generalization_delta (grammar): {ho.generalization_delta_grammar:.3f}  (train - test, lower = better)")
+    lines.append(f"  real_minus_shuffle (test):     {ho.grammar_accept_real_minus_shuffle_test:+.3f}  (> 0.10 = structure survives shuffle)")
+    lines.append(f"  generalization_delta (grammar):{ho.generalization_delta_grammar:.3f}  (train - test, lower = better)")
     lines.append(f"  n_fields:                       train={ho.n_fields_train:.1f}  test={ho.n_fields_test:.1f}  match={ho.fields_match}")
 
     # Bootstrap CI
@@ -980,8 +1030,8 @@ def validation_summary(result: ValidationResult) -> str:
 
     # Baseline self-classification
     lines.append(f"\nBASELINE SELF-CLASSIFICATION")
-    correct = sum(1 for b in result.baseline_classifications if b.correct_classification)
-    lines.append(f"  Correct: {correct}/{len(result.baseline_classifications)}")
+    lines.append(f"  Correct: {result.baseline_correct_count}/{len(result.baseline_classifications)}")
+    lines.append(f"  Manifold status: {result.manifold_status}")
     for bc in result.baseline_classifications:
         status = "OK" if bc.correct_classification else "FAIL"
         lines.append(f"  [{status}] {bc.corpus_name:20s} -> {bc.nearest_family:20s}")
@@ -1005,6 +1055,8 @@ def validation_summary(result: ValidationResult) -> str:
     lines.append(f"\n{'=' * width}")
     lines.append(f"VERDICT: {result.verdict_ladder}".center(width))
     lines.append(f"Confidence: {result.verdict_confidence}".center(width))
+    lines.append(f"Verdict ceiling: {result.verdict_ceiling}".center(width))
+    lines.append(f"Manifold status: {result.manifold_status}  novelty: {result.novelty_score_status}".center(width))
     lines.append(f"Novelty score: {result.novelty_score:.3f}".center(width))
     lines.append(f"{'=' * width}")
 
