@@ -40,6 +40,8 @@ disable=
     unspecified-encoding,
     # Consider using - readability choice
     consider-using-enumerate,
+    # f-string preference - % formatting acceptable for Windows console compatibility
+    consider-using-f-string,
     # Superfluous parens - sometimes clearer
     superfluous-parens,
     # Missing function docstring - obvious functions

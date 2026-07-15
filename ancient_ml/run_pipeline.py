@@ -30,6 +30,7 @@ MODULES = {
     "entropy": "entropy_analysis.py",
     "graph": "determinative_graph.py",
     "geometric": "geometric_phi_scanner.py",
+    "blind": "blind_pattern.py",
 }
 
 
@@ -40,8 +41,9 @@ def run_module(module_name: str, corpus: str = "oracc", project: str = "etcsri",
 
     # Build arguments per module
     if module_name == "geometric":
-        # geometric module uses --signs not --corpus
         cmd = [sys.executable, module_path, "--signs", corpus]
+    elif module_name == "blind":
+        cmd = [sys.executable, module_path, "--corpus", corpus]
     elif module_name == "entropy":
         cmd = [sys.executable, module_path, "--corpus", corpus, "--project", project]
     else:
@@ -85,6 +87,7 @@ def run_full_pipeline(corpus: str = "oracc", project: str = "etcsri",
     print("# ANCIENT WRITING SYSTEMS: FULL ANALYSIS PIPELINE")
     print(f"# Corpus: {corpus}")
     print(f"# Project: {project}")
+    print(f"# Modules: entropy, graph, geometric, blind")
     print(f"# Timestamp: {datetime.now().isoformat()}")
     print(f"{'='*60}")
 
@@ -98,19 +101,24 @@ def run_full_pipeline(corpus: str = "oracc", project: str = "etcsri",
     }
 
     # 1. Entropy analysis
-    print("\n[STEP 1/3] Entropy Analysis")
+    print("\n[STEP 1/4] Entropy Analysis")
     entropy_results = run_module("entropy", corpus, project)
     all_results["modules"]["entropy"] = entropy_results
 
     # 2. Determinative graph
-    print("\n[STEP 2/3] Determinative Graph Analysis")
+    print("\n[STEP 2/4] Determinative Graph Analysis")
     graph_results = run_module("graph", corpus, project)
     all_results["modules"]["graph"] = graph_results
 
     # 3. Geometric/phi scanner
-    print("\n[STEP 3/3] Geometric Phi Scanner")
+    print("\n[STEP 3/4] Geometric Phi Scanner")
     geometric_results = run_module("geometric", corpus, project)
     all_results["modules"]["geometric"] = geometric_results
+
+    # 4. Blind pattern analysis
+    print("\n[STEP 4/4] Blind Protocol Analysis")
+    blind_results = run_module("blind", corpus, project)
+    all_results["modules"]["blind"] = blind_results
 
     # Summary
     print("\n" + "#" * 60)
@@ -131,8 +139,17 @@ def run_full_pipeline(corpus: str = "oracc", project: str = "etcsri",
     if geometric_results.get("success"):
         geo_data = geometric_results.get("data", {})
         scan = geo_data.get("scan_result", {})
-        print(f"\nPhi Scan: {scan.get('n_phi_matches', 0)} matches out of {scan.get('n_signs_scanned', 0)} signs")
-        print(f"Overall Phi Score: {scan.get('overall_phi_score', 0):.3f}")
+        print("\nPhi Scan: %d matches out of %d signs" % (scan.get('n_phi_matches', 0), scan.get('n_signs_scanned', 0)))
+        print("Overall Phi Score: %.3f" % scan.get('overall_phi_score', 0))
+
+    if blind_results.get("success"):
+        blind_data = blind_results.get("data", {})
+        if "fingerprint" in blind_data:
+            fp = blind_data["fingerprint"]
+            print("\nBlind Protocol Analysis:")
+            print("  Redundancy: %.3f" % fp.get('redundancy', 0))
+            print("  Mutual Information: %.3f bits" % fp.get('mutual_information', 0))
+            print("  Periodic markers: %d" % len(fp.get('periodic_signs', {})))
 
     # Save combined results
     combined_file = OUTPUT_DIR / "full_pipeline_results.json"
@@ -148,7 +165,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Ancient writing systems analysis pipeline")
-    parser.add_argument("--module", choices=["entropy", "graph", "geometric"], default=None,
+    parser.add_argument("--module", choices=["entropy", "graph", "geometric", "blind"], default=None,
                         help="Run specific module only (default: all)")
     parser.add_argument("--corpus", choices=["oracc", "hieroglyphs"], default="oracc",
                         help="Corpus to analyze")
