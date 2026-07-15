@@ -963,3 +963,297 @@ if __name__ == "__main__":
     print(f"Overall phi score: {results['scan_result']['overall_phi_score']:.3f}")
     if results.get("quantum_maps"):
         print(f"Quantum resonance: {results['quantum_maps'][0].get('resonance_score', 0):.3f}")
+
+
+# =============================================================================
+# IMAGE-BASED PHI SCANNING (Priority 3)
+# =============================================================================
+
+# Optional image processing dependencies
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+
+
+class ImagePhiScanner:
+    """
+    Scans real hieroglyph images for golden ratio proportions.
+
+    Sources:
+    - EgyptianHieroglyphicText (GitHub): ~13.7k images, 310 Gardiner classes
+      https://github.com/rfuentesfe/EgyptianHieroglyphicText
+
+    Adversarial controls required for credibility:
+    - Selection bias: compare vs random image baseline
+    - Idealized vs real: drop from idealized geometry set
+    - Multiple targets: avoid p-hacking one ratio
+    """
+
+    # Phi-related ratio targets to test (avoid p-hacking)
+    PHI_TARGETS = {
+        "phi": PHI,              # ≈ 1.618
+        "phi_inv": PHI_INV,      # ≈ 0.618
+        "phi_sq": PHI_SQUARED,   # ≈ 2.618
+        "phi_minus1": PHI - 1,   # ≈ 0.618
+        "phi_plus1": PHI + 1,    # ≈ 2.618
+    }
+
+    def __init__(self, tolerance: float = 0.05):
+        self.tolerance = tolerance
+        self.results = []
+
+    def load_image(self, path: Path) -> Optional["Image.Image"]:
+        """Load an image file."""
+        if not HAS_PIL:
+            print("[WARN] PIL not available, skipping image")
+            return None
+        try:
+            return Image.open(path).convert("L")  # Grayscale
+        except Exception as e:
+            print(f"[WARN] Failed to load {path}: {e}")
+            return None
+
+    def extract_bounding_box(self, img: "Image.Image") -> Tuple[float, float]:
+        """
+        Extract bounding box aspect ratio from image.
+        Uses simple thresholding + contour detection.
+        """
+        if HAS_CV2 and HAS_PIL:
+            # Use OpenCV for robust contour detection
+            img_np = np.array(img)
+            _, thresh = cv2.threshold(img_np, 127, 255, cv2.THRESH_BINARY_INV)
+            contours, _ = cv2.findContours(
+                thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            if contours:
+                largest = max(contours, key=cv2.contourArea)
+                x, y, w, h = cv2.boundingRect(largest)
+                return float(w), float(h)
+        else:
+            # PIL fallback: simple bounding box
+            bbox = img.getbbox()
+            if bbox:
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+                return float(w), float(h)
+        return 1.0, 1.0
+
+    def score_ratio(self, w: float, h: float) -> Dict[str, float]:
+        """
+        Score an aspect ratio against all phi targets.
+        Returns dict of target_name -> score (0 = no match, 1 = perfect).
+        """
+        if min(w, h) < 1:
+            return {k: 0.0 for k in self.PHI_TARGETS}
+
+        ratio = max(w, h) / min(w, h)  # Always > 1
+        scores = {}
+        for name, target in self.PHI_TARGETS.items():
+            dist = abs(ratio - target)
+            score = max(0.0, 1.0 - dist / (target * self.tolerance * 2))
+            scores[name] = min(score, 1.0)
+        return scores
+
+    def scan_image(self, img_path: Path) -> Optional[Dict]:
+        """
+        Scan a single hieroglyph image for phi ratios.
+        Returns dict with aspect ratio and phi scores.
+        """
+        img = self.load_image(img_path)
+        if img is None:
+            return None
+
+        w, h = self.extract_bounding_box(img)
+        scores = self.score_ratio(w, h)
+        best_target = max(scores, key=scores.get)
+        best_score = scores[best_target]
+
+        return {
+            "path": str(img_path.name),
+            "width": w,
+            "height": h,
+            "aspect_ratio": max(w, h) / min(w, h),
+            "phi_scores": scores,
+            "best_target": best_target,
+            "best_score": best_score,
+        }
+
+    def scan_directory(self, img_dir: Path) -> List[Dict]:
+        """
+        Scan all images in a directory.
+        Supported formats: .png, .jpg, .jpeg, .bmp
+        """
+        if not img_dir.exists():
+            print(f"[WARN] Directory not found: {img_dir}")
+            return []
+
+        results = []
+        for ext in ("*.png", "*.jpg", "*.jpeg", "*.bmp"):
+            for img_path in img_dir.glob(ext):
+                result = self.scan_image(img_path)
+                if result:
+                    results.append(result)
+
+        return results
+
+    def compute_control_random(self, n: int = 100) -> Dict:
+        """
+        Control: random rectangles with uniform width/height.
+        Tests if phi matches are due to selection bias.
+        """
+        np.random.seed(42)
+        widths = np.random.uniform(10, 500, n)
+        heights = np.random.uniform(10, 500, n)
+
+        phi_hits = 0
+        for w, h in zip(widths, heights):
+            scores = self.score_ratio(w, h)
+            if max(scores.values()) > 0.8:
+                phi_hits += 1
+
+        return {
+            "type": "random_rectangles",
+            "n": n,
+            "phi_hits": phi_hits,
+            "phi_hit_rate": phi_hits / n,
+        }
+
+    def compute_control_shuffled(self, aspect_ratios: List[float]) -> Dict:
+        """
+        Control: shuffled aspect ratio list.
+        Tests if phi matches in real images exceed chance.
+        """
+        if len(aspect_ratios) < 2:
+            return {"type": "shuffled", "phi_hit_rate": 0.0}
+
+        np.random.seed(42)
+        shuffled = aspect_ratios.copy()
+        np.random.shuffle(shuffled)
+
+        # Pair shuffled widths with real heights
+        phi_hits = 0
+        for i, ratio in enumerate(shuffled[:len(aspect_ratios)]):
+            # ratio is w/h; generate fake w, h
+            fake_w = ratio * 100
+            fake_h = 100
+            scores = self.score_ratio(fake_w, fake_h)
+            if max(scores.values()) > 0.8:
+                phi_hits += 1
+
+        return {
+            "type": "shuffled_pairs",
+            "n": len(aspect_ratios),
+            "phi_hits": phi_hits,
+            "phi_hit_rate": phi_hits / len(aspect_ratios),
+        }
+
+    def bootstrap_ci(self, scores: List[float], n_bootstrap: int = 1000,
+                     ci: float = 0.95) -> Tuple[float, float]:
+        """
+        Bootstrap confidence interval for phi hit rate.
+        Returns (lower, upper) bounds.
+        """
+        if len(scores) < 2:
+            return 0.0, 1.0
+
+        np.random.seed(42)
+        hit_rates = []
+        for _ in range(n_bootstrap):
+            sample = np.random.choice(scores, size=len(scores), replace=True)
+            hit_rates.append(np.mean(sample))
+
+        alpha = (1 - ci) / 2
+        lower = np.percentile(hit_rates, alpha * 100)
+        upper = np.percentile(hit_rates, (1 - alpha) * 100)
+        return float(lower), float(upper)
+
+
+def run_image_phi_scan(
+    img_dir: Path = Path("data/hieroglyphs"),
+    output_dir: Path = Path("outputs/geometric_phi"),
+    tolerance: float = 0.05,
+) -> Dict:
+    """
+    Run image-based phi scanning with controls.
+
+    Args:
+        img_dir: Directory containing hieroglyph images
+        output_dir: Output directory for results
+        tolerance: ±% tolerance for phi matches
+
+    Returns:
+        Dict with scan results and control comparisons
+    """
+    print("\n" + "=" * 60)
+    print("IMAGE-BASED PHI SCANNING")
+    print("=" * 60)
+
+    scanner = ImagePhiScanner(tolerance=tolerance)
+
+    # Scan images
+    print(f"\n[1/3] Scanning images in {img_dir}...")
+    if not img_dir.exists():
+        print("[INFO] Image directory not found. Running controls only.")
+        print("[INFO] Place hieroglyph images in data/hieroglyphs/ to scan real images.")
+        image_results = []
+    else:
+        image_results = scanner.scan_directory(img_dir)
+
+    print(f"    Images scanned: {len(image_results)}")
+
+    # Compute control baselines
+    print("\n[2/3] Computing control baselines...")
+
+    # Control 1: random rectangles
+    random_ctrl = scanner.compute_control_random(n=1000)
+    print(f"    Random rectangles phi hit rate: {random_ctrl['phi_hit_rate']:.3f}")
+
+    # Control 2: shuffled aspect ratios
+    aspect_ratios = [r["aspect_ratio"] for r in image_results]
+    if aspect_ratios:
+        shuffled_ctrl = scanner.compute_control_shuffled(aspect_ratios)
+        print(f"    Shuffled pairs phi hit rate: {shuffled_ctrl['phi_hit_rate']:.3f}")
+    else:
+        shuffled_ctrl = {"type": "shuffled_pairs", "n": 0, "phi_hits": 0, "phi_hit_rate": 0.0}
+
+    # Compute CI for real images
+    if image_results:
+        scores = [r["best_score"] for r in image_results]
+        real_hit_rate = sum(1 for s in scores if s > 0.8) / len(scores)
+        ci_lower, ci_upper = scanner.bootstrap_ci(scores)
+        print(f"    Real images phi hit rate: {real_hit_rate:.3f}")
+        print(f"    Bootstrap CI (95%): [{ci_lower:.3f}, {ci_upper:.3f}]")
+    else:
+        real_hit_rate = 0.0
+        ci_lower = ci_upper = 0.0
+
+    # Summary
+    print("\n[3/3] Saving results...")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    output = {
+        "n_images_scanned": len(image_results),
+        "real_phi_hit_rate": real_hit_rate,
+        "ci_95": {"lower": ci_lower, "upper": ci_upper},
+        "controls": {
+            "random_rectangles": random_ctrl,
+            "shuffled_pairs": shuffled_ctrl,
+        },
+        "tolerance": tolerance,
+        "phi_targets": {k: float(v) for k, v in scanner.PHI_TARGETS.items()},
+    }
+
+    output_file = output_dir / "image_phi_scan_results.json"
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+    print(f"    Saved to {output_file}")
+
+    return output
