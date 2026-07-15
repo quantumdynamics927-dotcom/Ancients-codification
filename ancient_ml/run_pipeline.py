@@ -14,7 +14,8 @@ Usage:
     python run_pipeline.py --entropy
     python run_pipeline.py --graph
     python run_pipeline.py --geometric
-    python run_pipeline.py --corpus hieroglyphs
+    python run_pipeline.py --corpus hieroglyphs --project etcsri
+    python run_pipeline.py --image-scan
 """
 
 import subprocess
@@ -32,7 +33,8 @@ MODULES = {
 }
 
 
-def run_module(module_name: str, corpus: str = "oracc", extra_args: list = None) -> dict:
+def run_module(module_name: str, corpus: str = "oracc", project: str = "etcsri",
+               extra_args: list = None) -> dict:
     """Run a single analysis module and return results."""
     module_path = MODULES[module_name]
 
@@ -40,6 +42,8 @@ def run_module(module_name: str, corpus: str = "oracc", extra_args: list = None)
     if module_name == "geometric":
         # geometric module uses --signs not --corpus
         cmd = [sys.executable, module_path, "--signs", corpus]
+    elif module_name == "entropy":
+        cmd = [sys.executable, module_path, "--corpus", corpus, "--project", project]
     else:
         cmd = [sys.executable, module_path, "--corpus", corpus]
 
@@ -74,11 +78,13 @@ def run_module(module_name: str, corpus: str = "oracc", extra_args: list = None)
     return results
 
 
-def run_full_pipeline(corpus: str = "oracc") -> dict:
+def run_full_pipeline(corpus: str = "oracc", project: str = "etcsri",
+                      image_scan: bool = False) -> dict:
     """Run all three analysis modules in sequence."""
     print(f"\n{'='*60}")
     print("# ANCIENT WRITING SYSTEMS: FULL ANALYSIS PIPELINE")
     print(f"# Corpus: {corpus}")
+    print(f"# Project: {project}")
     print(f"# Timestamp: {datetime.now().isoformat()}")
     print(f"{'='*60}")
 
@@ -93,17 +99,17 @@ def run_full_pipeline(corpus: str = "oracc") -> dict:
 
     # 1. Entropy analysis
     print("\n[STEP 1/3] Entropy Analysis")
-    entropy_results = run_module("entropy", corpus)
+    entropy_results = run_module("entropy", corpus, project)
     all_results["modules"]["entropy"] = entropy_results
 
     # 2. Determinative graph
     print("\n[STEP 2/3] Determinative Graph Analysis")
-    graph_results = run_module("graph", corpus)
+    graph_results = run_module("graph", corpus, project)
     all_results["modules"]["graph"] = graph_results
 
     # 3. Geometric/phi scanner
     print("\n[STEP 3/3] Geometric Phi Scanner")
-    geometric_results = run_module("geometric", corpus)
+    geometric_results = run_module("geometric", corpus, project)
     all_results["modules"]["geometric"] = geometric_results
 
     # Summary
@@ -146,11 +152,22 @@ if __name__ == "__main__":
                         help="Run specific module only (default: all)")
     parser.add_argument("--corpus", choices=["oracc", "hieroglyphs"], default="oracc",
                         help="Corpus to analyze")
+    parser.add_argument("--project", default="etcsri",
+                        help="ORACC project name (e.g. etcsri, rinap, cams/gkab)")
     parser.add_argument("--all", action="store_true", help="Run all modules")
+    parser.add_argument("--image-scan", action="store_true",
+                        help="Run image-based phi scanning (requires images in data/hieroglyphs/)")
 
     args = parser.parse_args()
 
+    if args.image_scan:
+        from geometric_phi_scanner import run_image_phi_scan
+        output_dir = PROJECT_ROOT / "outputs" / "geometric_phi"
+        img_dir = PROJECT_ROOT / "data" / "hieroglyphs"
+        run_image_phi_scan(img_dir=img_dir, output_dir=output_dir)
+        return
+
     if args.module:
-        run_module(args.module, args.corpus)
+        run_module(args.module, args.corpus, args.project)
     else:
-        run_full_pipeline(args.corpus)
+        run_full_pipeline(args.corpus, args.project)

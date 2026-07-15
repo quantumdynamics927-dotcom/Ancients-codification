@@ -49,4 +49,6 @@ disable=
     # Too many lines - research module intentionally large
     too-many-lines,
     # C-extension no member - cv2 optional dependency
-    c-extension-no-member
+    c-extension-no-member,
+    # Return outside function - valid at module level in if __name__ == "__main__":
+    return-outside-function
