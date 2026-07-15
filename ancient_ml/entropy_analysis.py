@@ -14,21 +14,19 @@ Usage:
     python entropy_analysis.py --compare-baselines
 """
 
-import numpy as np
-import pandas as pd
 import json
-import hashlib
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+import numpy as np
 import requests
 
 # Optional: visualization
 try:
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
@@ -122,12 +120,10 @@ def conditional_entropy(sequence: list, n: int = 1, smooth: float = 1e-10) -> fl
         joint_counts[(curr_token, prev_tokens)] += 1
         marginal_counts[prev_tokens] += 1
 
-    # H(X) - sum(p(x_prev) * H(X|X_prev))
-    h_uncond = ngram_entropy(sequence, 1, smooth)
-
+    # Conditional entropy: sum(p(x_prev) * H(X|X_prev))
     h_cond = 0.0
     total = sum(marginal_counts.values())
-    for (curr, prev), jc in joint_counts.items():
+    for (_, prev), jc in joint_counts.items():
         p_prev = marginal_counts[prev] / total
         p_curr_given_prev = jc / marginal_counts[prev]
         if p_curr_given_prev > 0:
@@ -195,8 +191,7 @@ class OraccLoader:
         """
         if self.config.use_api:
             return self._load_from_api(tablet_ids)
-        else:
-            return self._load_from_files(tablet_ids)
+        return self._load_from_files(tablet_ids)
 
     def _load_from_api(self, tablet_ids: Optional[list] = None) -> list:
         sequences = []
@@ -269,7 +264,7 @@ class OraccLoader:
 
         sequences = []
         for f in self.config.corpus_path.glob("*.json"):
-            with open(f) as fp:
+            with open(f, encoding="utf-8") as fp:
                 data = json.load(fp)
             signs = self._extract_signs(data)
             if signs:
@@ -343,8 +338,8 @@ class HieroglyphLoader:
             ["i", "n", "x", "p", "r"],  # i-n-x = ankh
             # Royal titulary
             ["nsw", "b", "t", "i", "r", "p", "ny", "h", "w", "t", "s", "r", "m", "s", "a"],
-            # Offering formula
-            ["d", "d", "h", "tp", "n", "ws", "ir", "n", "p", "th", "n", "k", "a", "n", "p", "t", "n", "n", "a"],
+            ["d", "d", "h", "tp", "n", "ws", "ir", "n", "p", "th",  # offering formula
+             "n", "k", "a", "n", "p", "t", "n", "n", "a"],
             # Amarna letter style (simplified)
             ["i", "a", "n", "k", "m", "w", "d", "a", "n", "r", "a", "mi", "i", "a", "n", "k", "n", "p", "y"],
         ]
@@ -416,9 +411,14 @@ class BaselineLoader:
         import random
         random.seed(42)  # Reproducible
 
-        octet = lambda: str(random.randint(0, 255))
-        port = lambda: str(random.randint(0, 65535))
-        seq = lambda: str(random.randint(0, 2**32 - 1))
+        def octet():
+            return str(random.randint(0, 255))
+
+        def port():
+            return str(random.randint(0, 65535))
+
+        def seq():
+            return str(random.randint(0, 2**32 - 1))
 
         flags = ["SYN", "ACK", "FIN", "RST", "PSH", "URG"]
 
@@ -611,21 +611,20 @@ class EntropyAnalyzer:
 
         if closest == "tcp":
             return "HIGHLY STRUCTURED - closest to protocol/network packets"
-        elif closest == "python":
+        if closest == "python":
             return "STRUCTURED - closer to source code than natural language"
-        elif closest == "english":
+        if closest == "english":
             return "ORGANIC - entropy profile similar to natural language"
-        elif closest == "dna":
+        if closest == "dna":
             return "BIOLOGICAL - entropy profile similar to genetic sequences"
-        else:
-            return "AMBIGUOUS - does not cleanly match any baseline"
+        return "AMBIGUOUS - does not cleanly match any baseline"
 
     def _save_results(self, metrics: dict, comparison: dict):
         """Save results to output directory."""
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
 
         output_file = self.config.output_dir / "entropy_results.json"
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding="utf-8") as f:
             json.dump({
                 "metrics": {k: v for k, v in metrics.items() if k != "top_signs"},
                 "comparison": comparison,
@@ -668,6 +667,7 @@ class EntropyAnalyzer:
 
         plot_file = self.config.output_dir / "entropy_comparison.png"
         plt.savefig(plot_file, dpi=150)
+        plt.close(fig)
         print(f"[Saved] Plot to {plot_file}")
 
 

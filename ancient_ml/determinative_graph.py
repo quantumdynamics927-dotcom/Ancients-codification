@@ -19,19 +19,17 @@ Usage:
     python determinative_graph.py --compare-topologies
 """
 
-import numpy as np
-import pandas as pd
 import json
-import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict
+
+import numpy as np
 import requests
 
 try:
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
@@ -45,8 +43,6 @@ except ImportError:
     print("[WARN] networkx not found, graph analysis disabled")
 
 try:
-    from scipy import sparse
-    from scipy.sparse.linalg import eigsh
     from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
     HAS_SCIPY = True
 except ImportError:
@@ -110,7 +106,6 @@ SUMERIAN_CLASSIFIERS = {
     "ŠU": {"name": "Šu (hand)", "semantic_domain": "body"},
     "NI": {"name": "Ni (person)", "semantic_domain": "human"},
     "AN": {"name": "An (sky/heaven)", "semantic_domain": "element"},
-    "KI": {"name": "Ki (earth)", "semantic_domain": "element"},
     "DA": {"name": "Da (side/along)", "semantic_domain": "spatial"},
     "ÉR": {"name": "Ér (weep)", "semantic_domain": "action"},
     "UD": {"name": "Ud (day/sun)", "semantic_domain": "time"},
@@ -517,7 +512,7 @@ class DeterminativeGraphAnalyzer:
                     slope, intercept = np.polyfit(log_degrees, log_counts[:len(log_degrees)], 1)
                     metrics["power_law_exponent"] = -slope
                     metrics["is_scale_free"] = 0.5 < abs(slope) < 2.0
-                except:
+                except Exception:  # pylint: disable=broad-except
                     metrics["power_law_exponent"] = None
                     metrics["is_scale_free"] = None
 
@@ -573,7 +568,7 @@ class DeterminativeGraphAnalyzer:
             from networkx.algorithms.community import modularity
             partition = {node: i for i, comm in enumerate(communities) for node in comm}
             return modularity(G, [set(c) for c in communities], weight='weight')
-        except:
+        except Exception:  # pylint: disable=broad-except
             return 0.0
 
     def _analyze_centrality(self, G: nx.Graph) -> Dict:
@@ -712,7 +707,7 @@ class DeterminativeGraphAnalyzer:
                         if k not in ('interpretation', 'top_hub_determinatives', 'hub_signs')}
 
         output_file = self.config.output_dir / "determinative_graph_results.json"
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding="utf-8") as f:
             json.dump(serializable, f, indent=2, default=str)
 
         print(f"\n[Saved] Results to {output_file}")

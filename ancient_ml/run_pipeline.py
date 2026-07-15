@@ -51,7 +51,9 @@ def run_module(module_name: str, corpus: str = "oracc", extra_args: list = None)
     print(f"Command: {' '.join(cmd)}")
     print(f"{'='*60}\n")
 
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=PROJECT_ROOT)
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=PROJECT_ROOT, check=False
+    )
     output = result.stdout + result.stderr
 
     # Try to load results
@@ -66,7 +68,7 @@ def run_module(module_name: str, corpus: str = "oracc", extra_args: list = None)
     results = {"output": output, "success": result.returncode == 0}
 
     if results_file and results_file.exists():
-        with open(results_file) as f:
+        with open(results_file, encoding="utf-8") as f:
             results["data"] = json.load(f)
 
     return results
@@ -74,11 +76,11 @@ def run_module(module_name: str, corpus: str = "oracc", extra_args: list = None)
 
 def run_full_pipeline(corpus: str = "oracc") -> dict:
     """Run all three analysis modules in sequence."""
-    print(f"\n{'#'*60}")
-    print(f"# ANCIENT WRITING SYSTEMS: FULL ANALYSIS PIPELINE")
+    print(f"\n{'='*60}")
+    print("# ANCIENT WRITING SYSTEMS: FULL ANALYSIS PIPELINE")
     print(f"# Corpus: {corpus}")
     print(f"# Timestamp: {datetime.now().isoformat()}")
-    print(f"{'#'*60}")
+    print(f"{'='*60}")
 
     # Ensure output directory exists
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -128,7 +130,7 @@ def run_full_pipeline(corpus: str = "oracc") -> dict:
 
     # Save combined results
     combined_file = OUTPUT_DIR / "full_pipeline_results.json"
-    with open(combined_file, 'w') as f:
+    with open(combined_file, 'w', encoding="utf-8") as f:
         json.dump(all_results, f, indent=2, default=str)
 
     print(f"\n[Saved] Combined results to {combined_file}")

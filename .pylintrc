@@ -1,0 +1,48 @@
+[MESSAGES CONTROL]
+disable=
+    # Line length - we allow up to 120 for readability in scientific code
+    line-too-long,
+    # Too few public methods - dataclasses and simple loaders are intentional
+    too-few-public-methods,
+    # Too many instance attributes - config classes need all settings
+    too-many-instance-attributes,
+    # Too many locals - some functions are naturally complex
+    too-many-locals,
+    # Too many branches - case analysis is necessary
+    too-many-branches,
+    # Too many statements - some functions are naturally long
+    too-many-statements,
+    # Unused argument - some callbacks need standard signatures
+    unused-argument,
+    # Redefining - acceptable in data processing code
+    redefined-outer-name,
+    # Broad exception - needed for API calls
+    broad-exception-caught,
+    # Import order - third-party first not always practical
+    wrong-import-order,
+    # Import outside toplevel - conditional imports for optional deps
+    import-outside-toplevel,
+    # Unused import - some optional deps not always used
+    unused-import,
+    # Unnecessary lambda - readability sometimes preferred
+    unnecessary-lambda-assignment,
+    # Unnecessary else/elif after return - readability
+    no-else-return,
+    # Singleton comparison - explicit True check sometimes clearer
+    singleton-comparison,
+    # Invalid name - single letter vars acceptable in math/graphs
+    invalid-name,
+    # Missing class docstring - some utility classes self-explanatory
+    missing-class-docstring,
+    # Unused variable - some algorithm params intentionally unused
+    unused-variable,
+    # Unspecified encoding - UTF-8 default is fine
+    unspecified-encoding,
+    # Consider using - readability choice
+    consider-using-enumerate,
+    # Superfluous parens - sometimes clearer
+    superfluous-parens,
+    # Missing function docstring - obvious functions
+    missing-function-docstring,
+    # Duplicate code - similar loaders expected
+    duplicate-code

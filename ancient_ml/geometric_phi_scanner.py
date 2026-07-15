@@ -21,22 +21,18 @@ Usage:
     python geometric_phi_scanner.py --layout-columns --quantum-map
 """
 
-import numpy as np
 import json
-import math
-import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List, Tuple, Dict, Callable
-from functools import lru_cache
+from typing import Optional, List, Tuple, Dict
+
+import numpy as np
 
 try:
     import matplotlib
     matplotlib.use('Agg')  # Non-interactive backend
     import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    from matplotlib.path import Path as MplPath
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
@@ -922,7 +918,7 @@ def run_full_geometric_analysis(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_file = output_dir / "geometric_phi_results.json"
-    with open(output_file, 'w') as f:
+    with open(output_file, 'w', encoding="utf-8") as f:
         json.dump(results, f, indent=2, default=str)
 
     print(f"    Saved to {output_file}")
