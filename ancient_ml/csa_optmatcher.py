@@ -186,7 +186,7 @@ class OptMatcher:
             return 0.0
 
         # K-permutation encoding
-        k = min(3, min(len(seq1), len(seq2)))
+        k = min(3, len(seq1), len(seq2))
         enc1 = set(self.k_permutation_encode(seq1, k))
         enc2 = set(self.k_permutation_encode(seq2, k))
 
@@ -428,7 +428,7 @@ def benchmark_csa_optmatcher() -> Dict:
     ))
     accuracy = correct / len(ugaritic) if ugaritic else 0
 
-    print(f"\nUgaritic -> Hebrew:")
+    print("\nUgaritic -> Hebrew:")
     print(f"  Known cognates: {len(ugaritic)}")
     print(f"  Correctly matched: {correct}")
     print(f"  Accuracy: {accuracy:.1%}")
@@ -450,7 +450,7 @@ def benchmark_csa_optmatcher() -> Dict:
     ))
     accuracy = correct / len(sumerian) if sumerian else 0
 
-    print(f"\nSumerian -> Akkadian:")
+    print("\nSumerian -> Akkadian:")
     print(f"  Known cognates: {len(sumerian)}")
     print(f"  Correctly matched: {correct}")
     print(f"  Accuracy: {accuracy:.1%}")
@@ -472,7 +472,7 @@ def benchmark_csa_optmatcher() -> Dict:
     ))
     accuracy = correct / len(egyptian) if egyptian else 0
 
-    print(f"\nEgyptian -> Semitic:")
+    print("\nEgyptian -> Semitic:")
     print(f"  Known cognates: {len(egyptian)}")
     print(f"  Correctly matched: {correct}")
     print(f"  Accuracy: {accuracy:.1%}")
