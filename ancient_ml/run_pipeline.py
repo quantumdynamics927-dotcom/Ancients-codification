@@ -165,7 +165,7 @@ if __name__ == "__main__":
         output_dir = PROJECT_ROOT / "outputs" / "geometric_phi"
         img_dir = PROJECT_ROOT / "data" / "hieroglyphs"
         run_image_phi_scan(img_dir=img_dir, output_dir=output_dir)
-        return
+        sys.exit(0)
 
     if args.module:
         run_module(args.module, args.corpus, args.project)
