@@ -22,6 +22,9 @@ outputs/
 *.json
 !outputs/.gitkeep
 
+# ORACC corpus cache (large downloads)
+ancient_ml/data/oracc/
+
 # OS
 .DS_Store
 Thumbs.db

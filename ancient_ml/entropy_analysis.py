@@ -16,13 +16,20 @@ Usage:
 
 import json
 import re
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import requests
+
+# ORACC JSON loader (preferred over raw API)
+try:
+    from oracc_loader import load_sign_sequences, load_determinative_pairs, ORACC_PROJECTS
+    HAS_ORACC_LOADER = True
+except ImportError:
+    HAS_ORACC_LOADER = False
 
 # Optional: visualization
 try:
@@ -50,6 +57,10 @@ class EntropyConfig:
     corpus_type: str = "oracc"          # "oracc", "hieroglyphs", "custom"
     corpus_path: Optional[Path] = None
     use_api: bool = True                 # Use Oracc API vs local files
+
+    # ORACC-specific
+    oracc_project: str = "etcsri"        # ORACC project name
+    max_texts: Optional[int] = None      # Limit texts loaded
 
     # Analysis settings
     ngram_range: tuple = (1, 2)          # (min_n, max_n) for n-grams
@@ -167,17 +178,14 @@ def redundancy(sequence: list, n: int = 1, smooth: float = 1e-10) -> float:
 class OraccLoader:
     """
     Loads cuneiform tablet data from Oracc (Open Richly Annotated Cuneiform Corpus).
-    API: https://cdli.museum.upenn.edu/api/
+    Uses oracc_loader.py for JSON zip downloads when available.
 
     Signs are stored as transliterations (e.g., "ki", "ag", "du11")
     Each sign may have grammatical markers including determinatives (prefixed with $)
     """
 
-    BASE_URL = "https://cdli.museum.upenn.edu/api"
-
     def __init__(self, config: EntropyConfig):
         self.config = config
-        self.cache = {}
 
     def load_corpus(self, tablet_ids: Optional[list] = None) -> list:
         """
@@ -189,87 +197,24 @@ class OraccLoader:
         Returns:
             List of sign sequences (each sequence = one tablet)
         """
-        if self.config.use_api:
-            return self._load_from_api(tablet_ids)
-        return self._load_from_files(tablet_ids)
+        # Try oracc_loader first (JSON zip format)
+        if HAS_ORACC_LOADER:
+            return self._load_from_oracc_loader()
+        # Fallback to sample data
+        print("[INFO] oracc_loader not available, using embedded sample sequences")
+        return self._sample_data()
 
-    def _load_from_api(self, tablet_ids: Optional[list] = None) -> list:
-        sequences = []
-
-        # Sample corpus - key tablets from different periods
-        if tablet_ids is None:
-            # P3499 = Early Dynastic administrative, P2267 = Ur III, etc.
-            tablet_ids = [
-                "P3499", "P2267", "P3398", "P1001",  # Administrative
-                "P2376", "P3022",                      # Literary
-            ]
-
-        for tablet_id in tablet_ids:
-            try:
-                url = f"{self.BASE_URL}/texts/{tablet_id}"
-                resp = requests.get(url, timeout=10)
-                if resp.status_code != 200:
-                    continue
-
-                data = resp.json()
-                # Extract transliteration lines
-                signs = self._extract_signs(data)
-                if signs:
-                    sequences.append(signs)
-                    self.cache[tablet_id] = signs
-
-            except Exception as e:
-                print(f"[WARN] Failed to load tablet {tablet_id}: {e}")
-                continue
-
-        # If API failed, try sample data
-        if not sequences:
-            print("[INFO] API unavailable, using embedded sample sequences")
-            sequences = self._sample_data()
-
-        return sequences
-
-    def _extract_signs(self, data: dict) -> list:
-        """Extract sign sequence from Oracc JSON response."""
-        signs = []
-
-        # Walk the JSON structure - varies by API version
-        def walk(obj):
-            if isinstance(obj, dict):
-                # Look for transliteration field
-                if obj.get("type") == "surface" or obj.get("type") == "line":
-                    for child in obj.get("content", []):
-                        walk(child)
-                elif obj.get("f") and isinstance(obj["f"], dict):
-                    # Sign form field
-                    form = obj["f"]
-                    if "tentative_value" in form:
-                        signs.append(form["tentative_value"])
-                    elif "values" in form and form["values"]:
-                        signs.append(form["values"][0])
-                else:
-                    for v in obj.values():
-                        walk(v)
-            elif isinstance(obj, list):
-                for item in obj:
-                    walk(item)
-
-        walk(data)
-        return signs
-
-    def _load_from_files(self, tablet_ids: Optional[list]) -> list:
-        """Load from local .json or .txt corpus files."""
-        if self.config.corpus_path is None:
-            return self._sample_data()
-
-        sequences = []
-        for f in self.config.corpus_path.glob("*.json"):
-            with open(f, encoding="utf-8") as fp:
-                data = json.load(fp)
-            signs = self._extract_signs(data)
-            if signs:
-                sequences.append(signs)
-        return sequences
+    def _load_from_oracc_loader(self) -> list:
+        """Load via oracc_loader.py - downloads JSON zip corpus."""
+        project = getattr(self.config, 'oracc_project', 'etcsri')
+        max_texts = getattr(self.config, 'max_texts', None)
+        try:
+            sequences = load_sign_sequences(project, max_texts=max_texts, use_cache=True)
+            if sequences:
+                return sequences
+        except Exception as e:
+            print(f"[WARN] oracc_loader failed: {e}")
+        return self._sample_data()
 
     def _sample_data(self) -> list:
         """
@@ -681,6 +626,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Entropy analysis of ancient writing systems")
     parser.add_argument("--corpus", choices=["oracc", "hieroglyphs"], default="oracc",
                         help="Corpus to analyze")
+    parser.add_argument("--project", default="etcsri",
+                        help="ORACC project name (e.g. etcsri, rinap, cams/gkab)")
+    parser.add_argument("--max-texts", type=int, default=None,
+                        help="Limit number of texts from ORACC")
     parser.add_argument("--measure", choices=["full", "quick"], default="full",
                         help="Analysis depth")
     parser.add_argument("--compare-baselines", action="store_true",
@@ -695,6 +644,8 @@ if __name__ == "__main__":
         output_dir=Path(args.output),
         use_api=True,
     )
+    config.oracc_project = args.project
+    config.max_texts = args.max_texts
 
     analyzer = EntropyAnalyzer(config)
     results = analyzer.run_full_analysis()
