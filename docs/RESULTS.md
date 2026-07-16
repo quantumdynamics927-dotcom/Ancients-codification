@@ -1,13 +1,13 @@
 # Results Summary
 
 **Last updated:** 2026-07-16
-**Primary corpus:** ETCSRI (Sumerian Royal Inscriptions) — 1,456 tablets, 68,083 signs, vocab=627
+**Primary corpus:** ETCSRI (Sumerian Royal Inscriptions, ORACC CC0 1.0)
+**Corpus stats:** 1,456 tablets, 68,083 signs, vocab=627
+**Grouped experiment:** GROUP_A (n=10, divine-marker), GROUP_B (n=194, royal), GROUP_C (n=1,252, admin)
 **Embedded samples:** hieroglyphs: 44 texts / 745 signs; cuneiform: 52 texts / 652 signs
 
-**Pipeline status:** Network blocked — ORACC API unavailable in this environment. ETCSRI was
-successfully downloaded via build-oracc.museum.upenn.edu (SSL bypass). RINAP download
-succeeded but only returned metadata (no text data). Re-run RINAP on a network-enabled
-machine from which `curl -L https://build-oracc.museum.upenn.edu/json/rinap.zip` succeeds.
+**Pipeline status:** ETCSRI fully processed. RINAP download blocked (metadata-only zip from build-oracc;
+oracc.iaas.upenn.edu API connection reset). See DATA_PROVENANCE.md for full details.
 
 ---
 
@@ -183,6 +183,55 @@ machine from which `curl -L https://build-oracc.museum.upenn.edu/json/rinap.zip`
 
 ---
 
+## Anunnaki Target Experiment (GROUP_A/B/C Comparison)
+
+**Date:** 2026-07-16
+**Protocol:** BLIND_RESEARCH_PROTOCOL.md — groups assigned by curator, analyst receives only anonymized tokens+group_id
+**Curation criteria:** GROUP_A: AN+KI co-occurrence (>=2 adjacent pairs); GROUP_B: >=50 signs, no divine markers; GROUP_C: <50 signs, no royal/divine markers
+**Data sufficiency gate:** GROUP_A (n=10 tablets) is below the 100-tablet threshold — interpret with extreme caution.
+
+### Group Statistics
+
+| Group | n_tablets | n_signs | vocab | mean_len | Status |
+|-------|-----------|---------|-------|----------|--------|
+| GROUP_A (divine markers) | 10 | 15,488 | 429 | 1548.8 | Below threshold |
+| GROUP_B (royal controls) | 194 | 24,349 | 508 | 125.5 | Sufficient |
+| GROUP_C (administrative) | 1,252 | 28,246 | 411 | 22.6 | Sufficient |
+
+### Blind Validation Results (held-out by tablet)
+
+| Metric | GROUP_A | GROUP_B | GROUP_C | Notes |
+|--------|---------|---------|---------|-------|
+| Verdict | LEVEL_1 | LEVEL_1 | LEVEL_1 | All same level |
+| grammar_real_minus_shuffle | +0.000 | +0.000 | +0.000 | None pass grammar gate |
+| MI_delta vs Markov | -0.248 | -0.174 | **+0.124** | GROUP_C beats Markov |
+| MI_delta vs shuffle | +1.137 | +1.481 | +2.139 | All beat shuffle |
+| field_stability (test) | 0.638 | 0.629 | 0.722 | — |
+| Bonferroni p | 0.0034 | 0.0052 | 0.0126 | All pass |
+| manifold status | UNCALIBRATED | UNCALIBRATED | UNCALIBRATED | Ceiling LEVEL_2 |
+| null_wins | 2/4 | 2/4 | 2/4 | — |
+
+### Interpretation
+
+- **All three groups return LEVEL_1_STRUCTURED_SYMBOLIC** — no group reaches formal grammar threshold.
+- **GROUP_C (administrative) is the only group that beats the Markov null** (MI_delta=+0.124 > 0.05 threshold). This may reflect more consistent sequential structure in short formulaic administrative texts.
+- **GROUP_A (n=10) is critically underpowered.** Ten tablets cannot support statistical inference. The 15,488 signs come from only 10 very long royal inscriptions.
+- **No structural evidence for GROUP_A distinct from GROUP_B.** The divine-marker filter does not produce a measurable structural difference in the blind sign-stream analysis.
+- **The manifold remains UNCALIBRATED across all groups** — novelty scores are NON_INTERPRETABLE until >=4/6 baseline self-classification passes.
+
+### What This Does NOT Show
+
+| Claim | Status |
+|-------|--------|
+| GROUP_A proves Anunnaki technology | **NOT SHOWN** — structural metrics do not distinguish GROUP_A from controls |
+| Divine-marker texts have formal grammar | **NOT SHOWN** — grammar_real_minus_shuffle = 0.000 for all groups |
+| GROUP_A is a distinct communication system | **NOT SHOWN** — only 10 tablets, manifold uncalibrated |
+
+### Honest Conclusion
+The blind pipeline finds no structural evidence that divine-marker texts (GROUP_A) differ from matched royal controls (GROUP_B) or administrative tablets (GROUP_C). The only statistically notable finding is that administrative tablets (GROUP_C) beat the Markov null — but this is explained by formulaic repetition, not formal grammar. All groups remain at LEVEL_1 with ceiling LEVEL_2.
+
+---
+
 ## Validation Interpretation
 
 ### What the Results Show
@@ -274,10 +323,12 @@ No phi enrichment after preregistered +/-5% tolerance with Bonferroni and FDR co
 Current outputs do not support claims about machine-language authorship, Anunnaki origin, ancient technology, or a geometry channel.
 
 ### Next Steps (in priority order)
-1. Acquire primary ORACC data (etcsri, rinap) - network blocked at present
-2. Calibrate family manifold: >= 80% self-classification on control baselines
-3. Test on corpus with n >= 10,000 opaque sign tokens
-4. Confirm Markov null is beaten before claiming formal grammar
+1. [x] ~~ETCSRI primary corpus~~ — Done: 1,456 tablets, 68,083 signs, LEVEL_1 result
+2. [x] ~~Anunnaki GROUP_A/B/C experiment~~ — Done: all three groups LEVEL_1, GROUP_C beats Markov
+3. [ ] Calibrate family manifold: >= 80% self-classification on control baselines (blocking LEVEL_3+)
+4. [ ] Acquire RINAP corpus — network-enabled machine needed (curl -L https://build-oracc.museum.upenn.edu/json/rinap.zip)
+5. [ ] Run on primary ORACC data with n >= 10,000 signs per group (GROUP_A currently n=10)
+6. [ ] Confirm Markov null beaten before claiming formal grammar
 
 ---
 
