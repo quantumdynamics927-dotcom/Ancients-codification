@@ -60,7 +60,7 @@ def download_project(project: str, output_dir: Path, use_alt: bool = False, time
     return extract_dir
 
 
-def parse_oracc_signs(json_dir: Path, project: str):
+def parse_oracc_signs(json_dir: Path, project: str, max_texts: int = None):
     """
     Parse ORACC JSON files and extract raw sign sequences.
     Handles the cdl/gdl nested structure (ORACC build-oracc format).
@@ -84,8 +84,14 @@ def parse_oracc_signs(json_dir: Path, project: str):
             sequences.append(tokens)
             texts_seen += 1
             signs_seen += len(tokens)
+            if max_texts is not None and texts_seen >= max_texts:
+                break
 
-    print(f"  Parsed {texts_seen} texts, {signs_seen} total signs")
+    # Trim to max_texts if limit was set
+    if max_texts is not None:
+        sequences = sequences[:max_texts]
+
+    print(f"  Parsed {len(sequences)} texts, {signs_seen} total signs")
     return sequences
 
 
@@ -178,7 +184,7 @@ def main():
 
     # Parse and export
     print(f"\nParsing sign sequences from {extract_dir}")
-    sequences = parse_oracc_signs(extract_dir, args.project)
+    sequences = parse_oracc_signs(extract_dir, args.project, max_texts=args.max_texts)
     if not sequences:
         print("[ERROR] No sign sequences found. Check JSON structure.")
         return 1
@@ -187,6 +193,33 @@ def main():
         blind_dir / f"{args.project.replace('/', '_')}_signs.jsonl"
     )
     export_blind_jsonl(sequences, output_path)
+
+    # Generate manifest
+    from datetime import date
+    all_tokens = [tok for seq in sequences for tok in seq]
+    vocab_counter = Counter(all_tokens)
+    vocab_sample = [s for s, _ in vocab_counter.most_common(20)]
+
+    manifest_dir = dataset_dir / "manifests"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifest_dir / f"{args.project.replace('/', '_')}_manifest.json"
+
+    manifest = {
+        "project": args.project,
+        "export_date": date.today().isoformat(),
+        "source_url": ORACC_ALT_URLS.get(args.project, ORACC_URLS.get(args.project)),
+        "n_texts": len(sequences),
+        "n_tokens": len(all_tokens),
+        "vocab_size": len(vocab_counter),
+        "vocab_sample": vocab_sample,
+        "blind_mode": True,
+        "jsonl_path": str(output_path.resolve().relative_to(PROJECT_ROOT)),
+        "note": "Only sign IDs extracted; no lemmas, glosses, or translations"
+    }
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"  Manifest written to {manifest_path}")
 
     print(f"\nTo run blind analysis:")
     print(f"  python ancient_ml/blind_pattern.py --corpus local --path {output_path} --validate")
