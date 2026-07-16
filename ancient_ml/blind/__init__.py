@@ -21,26 +21,26 @@ Modules:
     report.py       - Full sophistication scorecard
 
 Usage:
-    from blind.report import generate_report
+    from ancient_ml.blind.report import generate_report
     report = generate_report(sequences, corpus_name="etcsri")
 
-    from blind.validate import Validator
+    from ancient_ml.blind.validate import Validator
     validator = Validator(sequences, corpus_name="etcsri")
     result = validator.run_full_validation()
     print(result.verdict_ladder)
 """
 
-from blind.report import generate_report, FullReport
-from blind.tokenizer import Tokenizer, TokenizerConfig
-from blind.fingerprint import compute_fingerprints, FingerprintVector
-from blind.field_segmenter import FieldSegmenter, SegmentResult
-from blind.role_typer import RoleTyper, PseudoType
-from blind.grammar_inducer import GrammarInducer, InducedGrammar
-from blind.complexity import ComplexityAnalyzer, ComplexityResult
-from blind.family_manifold import FamilyManifold, FeatureVector, ManifoldResult
-from blind.geometry_channel import GeometryChannel, GeometryResult
-from blind.null_models import NullModels, NullMetrics
-from blind.validate import Validator, ValidationResult, validation_summary
+from .report import generate_report, FullReport
+from .tokenizer import Tokenizer, TokenizerConfig
+from .fingerprint import compute_fingerprints, FingerprintVector
+from .field_segmenter import FieldSegmenter, SegmentResult
+from .role_typer import RoleTyper, PseudoType
+from .grammar_inducer import GrammarInducer, InducedGrammar
+from .complexity import ComplexityAnalyzer, ComplexityResult
+from .family_manifold import FamilyManifold, FeatureVector, ManifoldResult
+from .geometry_channel import GeometryChannel, GeometryResult
+from .null_models import NullModels, NullMetrics
+from .validate import Validator, ValidationResult, validation_summary
 
 __all__ = [
     "generate_report",

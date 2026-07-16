@@ -24,7 +24,7 @@ Output format:
     confidence: bootstrap CI on novelty
 
 Usage:
-    from blind.report import Report, generate_report
+    from ancient_ml.blind.report import Report, generate_report
     report = generate_report(sequences, corpus_name="etcsri")
     print(report.to_text())
 """
@@ -37,15 +37,15 @@ import json
 import numpy as np
 
 # Import all blind modules
-from blind.tokenizer import Tokenizer
-from blind.fingerprint import compute_fingerprints, FingerprintVector
-from blind.field_segmenter import FieldSegmenter, SegmentResult
-from blind.role_typer import RoleTyper, PseudoType
-from blind.grammar_inducer import GrammarInducer, InducedGrammar
-from blind.complexity import ComplexityAnalyzer, ComplexityResult
-from blind.family_manifold import FamilyManifold, FeatureVector, ManifoldResult
-from blind.geometry_channel import GeometryChannel, GeometryResult
-from blind.null_models import NullModels, NullMetrics
+from .tokenizer import Tokenizer
+from .fingerprint import compute_fingerprints, FingerprintVector
+from .field_segmenter import FieldSegmenter, SegmentResult
+from .role_typer import RoleTyper, PseudoType
+from .grammar_inducer import GrammarInducer, InducedGrammar
+from .complexity import ComplexityAnalyzer, ComplexityResult
+from .family_manifold import FamilyManifold, FeatureVector, ManifoldResult
+from .geometry_channel import GeometryChannel, GeometryResult
+from .null_models import NullModels, NullMetrics
 
 
 # -----------------------------------------------------------------------------
