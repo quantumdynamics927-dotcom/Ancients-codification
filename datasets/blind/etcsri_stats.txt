@@ -1,0 +1,3 @@
+Sequences: 1456
+Total signs: 68083
+Vocab size: 627

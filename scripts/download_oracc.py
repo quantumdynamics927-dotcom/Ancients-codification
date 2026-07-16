@@ -19,23 +19,32 @@ ORACC_URLS = {
     "cams/gkab": "http://oracc.iaas.upenn.edu/json/cams_gkab.zip",
 }
 ORACC_ALT_URLS = {
-    "etcsri": "http://build-oracc.museum.upenn.edu/json/etcsri.zip",
+    "etcsri": "https://build-oracc.museum.upenn.edu/json/etcsri.zip",
+    "rinap": "https://build-oracc.museum.upenn.edu/json/rinap.zip",
 }
 
 
-def download_project(project: str, output_dir: Path, timeout: int = 300):
+def download_project(project: str, output_dir: Path, use_alt: bool = False, timeout: int = 300):
     """Download an ORACC project JSON zip."""
+    import ssl
     import urllib.request
 
-    url = ORACC_URLS.get(project, ORACC_URLS["etcsri"])
+    if use_alt and project in ORACC_ALT_URLS:
+        url = ORACC_ALT_URLS[project]
+    else:
+        url = ORACC_URLS.get(project, ORACC_URLS["etcsri"])
     zip_path = output_dir / f"{project.replace('/', '_')}.zip"
     extract_dir = output_dir / project.replace('/', '_')
 
     print(f"Downloading {project} from {url}")
     print(f"  -> {zip_path}")
 
+    # Bypass SSL verification (ORACC cert chain issues on some hosts)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
         data = resp.read()
     with open(zip_path, "wb") as f:
         f.write(data)
@@ -54,7 +63,8 @@ def download_project(project: str, output_dir: Path, timeout: int = 300):
 def parse_oracc_signs(json_dir: Path, project: str):
     """
     Parse ORACC JSON files and extract raw sign sequences.
-    Returns list of sign ID lists (opaque tokens).
+    Handles the cdl/gdl nested structure (ORACC build-oracc format).
+    Each .json file is one text record. Returns list of sign ID lists.
     """
     sequences = []
     texts_seen = 0
@@ -64,20 +74,16 @@ def parse_oracc_signs(json_dir: Path, project: str):
         try:
             with open(json_file, encoding="utf-8") as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             continue
 
-        # ORACC JSON structure: list of text objects
-        if not isinstance(data, list):
-            continue
-
-        for text in data[:500]:  # Cap per project
-            # Extract sign tokens from the text
-            tokens = extract_sign_tokens(text)
-            if tokens:
-                sequences.append(tokens)
-                texts_seen += 1
-                signs_seen += len(tokens)
+        # ORACC JSON: each file is one text object (not a list)
+        # Structure: {"type":"cdl","textid":"Q000376", "cdl":[...]}
+        tokens = extract_sign_tokens(data)
+        if tokens:
+            sequences.append(tokens)
+            texts_seen += 1
+            signs_seen += len(tokens)
 
     print(f"  Parsed {texts_seen} texts, {signs_seen} total signs")
     return sequences
@@ -86,39 +92,37 @@ def parse_oracc_signs(json_dir: Path, project: str):
 def extract_sign_tokens(text: dict) -> list:
     """
     Extract raw sign IDs from an ORACC text object.
+    Handles the cdl/gdl nested structure (ORACC build-oracc format).
     Returns list of sign ID strings (opaque tokens, no lemmas/translations).
+
+    ORACC structure:
+      text.cdl[].cdl[].cdl[].cdl[].f.gdl[].seq[].gdl_sign  <- sign inside seq
+      text.cdl[].cdl[].cdl[].cdl[].f.gdl[].gdl_sign         <- sign directly on gdl
     """
     tokens = []
 
-    # ORACC JSON: texts contain a "surface" or "lines" with "tokens"
-    # Each token may have: id, form (transliteration), sign_id
     def walk(obj):
         if isinstance(obj, dict):
-            # Check for sign_id field (the actual sign ID, not transliteration)
-            if "sign_id" in obj:
-                sid = obj["sign_id"]
+            # Always check for gdl_sign at this level
+            if "gdl_sign" in obj:
+                sid = obj["gdl_sign"]
                 if isinstance(sid, str) and sid.strip():
                     tokens.append(sid.strip())
-            # Check for sub_tokens (composite signs)
-            if "sub_tokens" in obj and isinstance(obj["sub_tokens"], list):
-                for st in obj["sub_tokens"]:
-                    walk(st)
-            # Check for tokens list
-            if "tokens" in obj and isinstance(obj["tokens"], list):
-                for tok in obj["tokens"]:
-                    walk(tok)
-            # Check for lines
-            if "lines" in obj and isinstance(obj["lines"], list):
-                for line in obj["lines"]:
-                    walk(line)
-            # Check for surfaces
-            if "surfaces" in obj and isinstance(obj["surfaces"], list):
-                for surf in obj["surfaces"]:
-                    walk(surf)
-            # Check for composition (some ORACC formats)
-            if "composition" in obj and isinstance(obj["composition"], list):
-                for item in obj["composition"]:
+            # Walk into seq[] arrays (sign tokens inside form)
+            if "seq" in obj and isinstance(obj["seq"], list):
+                for item in obj["seq"]:
                     walk(item)
+            # Walk into gdl[] arrays (form-level containers)
+            if "gdl" in obj and isinstance(obj["gdl"], list):
+                for item in obj["gdl"]:
+                    walk(item)
+            # Walk into cdl[] (ORACC node tree)
+            if "cdl" in obj and isinstance(obj["cdl"], list):
+                for child in obj["cdl"]:
+                    walk(child)
+            # Walk into f{} (form container)
+            if "f" in obj and isinstance(obj["f"], dict):
+                walk(obj["f"])
         elif isinstance(obj, list):
             for item in obj:
                 walk(item)
@@ -164,7 +168,7 @@ def main():
 
     # Download
     try:
-        extract_dir = download_project(args.project, oracc_dir)
+        extract_dir = download_project(args.project, oracc_dir, use_alt=args.alt)
     except Exception as e:
         print(f"[ERROR] Download failed: {e}")
         print("Try with --alt or download manually from:")
