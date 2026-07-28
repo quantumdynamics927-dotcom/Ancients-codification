@@ -18,7 +18,7 @@ Based on:
 - "Measuring the Statistical Significance of Protocol Field Inference" (IMC)
 
 Usage:
-    from blind.validate import Validator, ValidationResult
+    from ancient_ml.blind.validate import Validator, ValidationResult
     validator = Validator(sequences, corpus_name="etcsri")
     result = validator.run_full_validation()
     print(result.verdict_ladder)
@@ -327,7 +327,7 @@ class Validator:
 
     def _field_stability(self, sequences: List[List[str]]) -> float:
         """Compute field stability (mean stability across inferred fields)."""
-        from blind.field_segmenter import FieldSegmenter
+        from .field_segmenter import FieldSegmenter
         seg = FieldSegmenter(sequences)
         result = seg.segment()
         if result and result.fields:
@@ -335,7 +335,7 @@ class Validator:
         return 0.0
 
     def _n_fields(self, sequences: List[List[str]]) -> float:
-        from blind.field_segmenter import FieldSegmenter
+        from .field_segmenter import FieldSegmenter
         seg = FieldSegmenter(sequences)
         result = seg.segment()
         if result:
@@ -344,7 +344,7 @@ class Validator:
 
     def _grammar_accept(self, sequences: List[List[str]]) -> float:
         """Compute grammar acceptance rate on sequences."""
-        from blind.grammar_inducer import GrammarInducer
+        from .grammar_inducer import GrammarInducer
         try:
             inducer = GrammarInducer(sequences)
             grammar = inducer.induce()
@@ -377,12 +377,12 @@ class Validator:
 
     def _manifold_distance(self, sequences: List[List[str]]) -> Dict[str, float]:
         """Compute distances to all control families."""
-        from blind.family_manifold import FamilyManifold, FeatureVector
-        from blind.fingerprint import compute_fingerprints
-        from blind.field_segmenter import FieldSegmenter
-        from blind.role_typer import RoleTyper
-        from blind.grammar_inducer import GrammarInducer
-        from blind.complexity import ComplexityAnalyzer
+        from .family_manifold import FamilyManifold, FeatureVector
+        from .fingerprint import compute_fingerprints
+        from .field_segmenter import FieldSegmenter
+        from .role_typer import RoleTyper
+        from .grammar_inducer import GrammarInducer
+        from .complexity import ComplexityAnalyzer
 
         flat = [s for seq in sequences for s in seq]
         fp = compute_fingerprints(sequences)
